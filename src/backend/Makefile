@@ -49,6 +49,8 @@ ifeq ($(with_systemd),yes)
 LIBS += -lsystemd
 endif
 
+LIBS += $(shell llvm-config --ldflags --libs --system-libs) -lstdc++
+
 ##########################################################################
 
 all: submake-libpgport submake-schemapg postgres $(POSTGRES_IMP)

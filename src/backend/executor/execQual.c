@@ -89,8 +89,6 @@ static Datum ExecEvalParamExec(ExprState *exprstate, ExprContext *econtext,
 				  bool *isNull, ExprDoneCond *isDone);
 static Datum ExecEvalParamExtern(ExprState *exprstate, ExprContext *econtext,
 					bool *isNull, ExprDoneCond *isDone);
-static void init_fcache(Oid foid, Oid input_collation, FuncExprState *fcache,
-			MemoryContext fcacheCxt, bool needDescForSets);
 static void ShutdownFuncExpr(Datum arg);
 static TupleDesc get_cached_rowtype(Oid type_id, int32 typmod,
 				   TupleDesc *cache_field, ExprContext *econtext);
@@ -1320,7 +1318,7 @@ GetAttributeByName(HeapTupleHeader tuple, const char *attname, bool *isNull)
 /*
  * init_fcache - initialize a FuncExprState node during first use
  */
-static void
+void
 init_fcache(Oid foid, Oid input_collation, FuncExprState *fcache,
 			MemoryContext fcacheCxt, bool needDescForSets)
 {
@@ -5193,6 +5191,11 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 	/* Common code for all state-node types */
 	state->expr = node;
+
+	if (parent)
+	{
+		state = ExecCompileExpr(state, parent->ps_ExprContext);
+	}
 
 	return state;
 }

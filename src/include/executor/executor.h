@@ -230,6 +230,8 @@ extern bool ExecShutdownNode(PlanState *node);
 /*
  * prototypes from functions in execQual.c
  */
+extern void init_fcache(Oid foid, Oid input_collation, FuncExprState *fcache,
+			MemoryContext fcacheCxt, bool needDescForSets);
 extern Datum GetAttributeByNum(HeapTupleHeader tuple, AttrNumber attrno,
 				  bool *isNull);
 extern Datum GetAttributeByName(HeapTupleHeader tuple, const char *attname,
@@ -243,6 +245,7 @@ extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econt
 						  bool *isNull, ExprDoneCond *isDone);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
+extern ExprState *ExecCompileExpr(ExprState *node, ExprContext *econtext);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
