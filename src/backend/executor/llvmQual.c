@@ -1144,7 +1144,8 @@ GenerateExpr(LLVMBuilderRef builder,
 		default:
 		{
 			LLVMValueRef evalfunc_ptr = ConstPointer(
-				LLVMPointerType(ExprStateEvalFuncType(), 0),
+				LLVMPointerType(
+					LLVMPointerType(ExprStateEvalFuncType(), 0), 0),
 				&exprstate->evalfunc);
 			LLVMValueRef evalfunc = LLVMBuildLoad(
 				builder, evalfunc_ptr, "evalfunc");
