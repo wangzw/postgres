@@ -207,15 +207,22 @@ static LLVMValueRef
 BuildAllocaInBlock(LLVMBuilderRef builder, LLVMBasicBlockRef block,
 				   LLVMTypeRef type, const char *name)
 {
-	LLVMBasicBlockRef orig_block = LLVMGetInsertBlock(builder);
-	LLVMValueRef terminator = LLVMGetBasicBlockTerminator(block);
-	LLVMValueRef alloca;
+	LLVMBasicBlockRef current_block = LLVMGetInsertBlock(builder);
 
-	LLVMPositionBuilderBefore(builder, terminator);
-	alloca = LLVMBuildAlloca(builder, type, name);
+	if (block != current_block)
+	{
+		LLVMValueRef terminator = LLVMGetBasicBlockTerminator(block);
+		LLVMValueRef alloca;
 
-	LLVMPositionBuilderAtEnd(builder, orig_block);
-	return alloca;
+		LLVMPositionBuilderBefore(builder, terminator);
+		alloca = LLVMBuildAlloca(builder, type, name);
+		LLVMPositionBuilderAtEnd(builder, current_block);
+		return alloca;
+	}
+	else
+	{
+		return LLVMBuildAlloca(builder, type, name);
+	}
 }
 
 
