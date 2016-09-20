@@ -19,6 +19,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <llvm-c/ExecutionEngine.h>
+#include <llvm-c/Target.h>
+
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/sysattr.h"
@@ -506,6 +509,18 @@ InitializeMaxBackends(void)
 }
 
 /*
+ * Initialize LLVM JIT used for query compilation.
+ */
+static void
+InitLLVMJIT(void)
+{
+	LLVMLinkInMCJIT();
+	LLVMInitializeNativeTarget();
+	LLVMInitializeNativeAsmPrinter();
+	LLVMInitializeNativeAsmParser();
+}
+
+/*
  * Early initialization of a backend (either standalone or under postmaster).
  * This happens even before InitPostgres.
  *
@@ -639,6 +654,11 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	RelationCacheInitialize();
 	InitCatalogCache();
 	InitPlanCache();
+
+	/*
+	 * Initialize LLVM JIT compiler.
+	 */
+	InitLLVMJIT();
 
 	/* Initialize portal manager */
 	EnablePortalManager();
