@@ -244,8 +244,9 @@ extern Tuplestorestate *ExecMakeTableFunctionResult(ExprState *funcexpr,
 extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econtext,
 						  bool *isNull, ExprDoneCond *isDone);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
+extern ExprState *ExecInitExprNoJIT(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
-extern ExprStateEvalFunc ExecCompileExpr(ExprState *node, ExprContext *econtext);
+extern bool ExecCompileExpr(ExprState *node, ExprContext *econtext);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);

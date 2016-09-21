@@ -4450,7 +4450,7 @@ ExecEvalExprSwitchContext(ExprState *expression,
  * ExecInitExprNoJIT: variant of ExecInitExpr that does not do any runtime
  * compilation
  */
-static ExprState *
+ExprState *
 ExecInitExprNoJIT(Expr *node, PlanState *parent)
 {
 	ExprState  *state;
@@ -5210,16 +5210,7 @@ ExecInitExpr(Expr *node, PlanState *parent)
 {
 	ExprState *state = ExecInitExprNoJIT(node, parent);
 
-	if (state && parent)
-	{
-		ExprStateEvalFunc evalfunc = ExecCompileExpr(
-			state, parent->ps_ExprContext);
-
-		if (evalfunc)
-		{
-			state->evalfunc = evalfunc;
-		}
-	}
+	ExecCompileExpr(state, parent->ps_ExprContext);
 
 	return state;
 }

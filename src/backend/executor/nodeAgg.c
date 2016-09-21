@@ -2403,6 +2403,22 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	aggstate->sort_slot = ExecInitExtraTupleSlot(estate);
 
 	/*
+	 * initialize child expressions
+	 *
+	 * Note: ExecInitExpr finds Aggrefs for us, and also checks that no aggs
+	 * contain other agg calls in their arguments.  This would make no sense
+	 * under SQL semantics anyway (and it's forbidden by the spec). Because
+	 * that is true, we don't need to worry about evaluating the aggs in any
+	 * particular order.
+	 */
+	aggstate->ss.ps.targetlist = (List *)
+		ExecInitExprNoJIT((Expr *) node->plan.targetlist,
+						  (PlanState *) aggstate);
+	aggstate->ss.ps.qual = (List *)
+		ExecInitExprNoJIT((Expr *) node->plan.qual,
+						  (PlanState *) aggstate);
+
+	/*
 	 * Initialize child nodes.
 	 *
 	 * If we are doing a hashed aggregation then the child plan does not need
@@ -2578,20 +2594,17 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	}
 
 	/*
-	 * initialize child expressions
+	 * compile child expressions
 	 *
-	 * Note: ExecInitExpr finds Aggrefs for us, and also checks that no aggs
-	 * contain other agg calls in their arguments.  This would make no sense
-	 * under SQL semantics anyway (and it's forbidden by the spec). Because
-	 * that is true, we don't need to worry about evaluating the aggs in any
-	 * particular order.
+	 * This can't be done during ExecInitExpr because it would need
+	 * `ecxt_aggvalues` which are initialized later. ExecInitExpr can't be
+	 * moved here because the rest of the function relies on it being called
+	 * early (e.g. in ExecAssignResultTypeFromTL).
 	 */
-	aggstate->ss.ps.targetlist = (List *)
-		ExecInitExpr((Expr *) node->plan.targetlist,
-					 (PlanState *) aggstate);
-	aggstate->ss.ps.qual = (List *)
-		ExecInitExpr((Expr *) node->plan.qual,
-					 (PlanState *) aggstate);
+	ExecCompileExpr((ExprState *) aggstate->ss.ps.targetlist,
+					aggstate->ss.ps.ps_ExprContext);
+	ExecCompileExpr((ExprState *) aggstate->ss.ps.qual,
+					aggstate->ss.ps.ps_ExprContext);
 
 	/* -----------------
 	 * Perform lookups of aggregate function info, and initialize the

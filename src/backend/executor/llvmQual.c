@@ -1345,12 +1345,44 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 
 
 /*
- * ExecCompileExpr: compile expression with LLVM MCJIT.
+ * ExecCompileExpr: compile expression with LLVM MCJIT
+ *
+ * If compilation is successful, `evalfunc` pointer is changed to point to
+ * generated code and `true` is returned.
  */
-ExprStateEvalFunc
+bool
 ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
-	return IsExprSupported(exprstate)
-		? CompileExpr(exprstate, econtext)
-		: NULL;
+	if (!exprstate)
+	{
+		return false;
+	}
+
+	if (IsA(exprstate, List))
+	{
+		bool changed = false;
+		ListCell *cell;
+
+		foreach (cell, (List *) exprstate)
+		{
+			ExprState *exprstate = lfirst(cell);
+
+			changed |= ExecCompileExpr(exprstate, econtext);
+		}
+
+		return changed;
+	}
+
+	if (IsExprSupported(exprstate))
+	{
+		ExprStateEvalFunc evalfunc = CompileExpr(exprstate, econtext);
+
+		if (evalfunc)
+		{
+			exprstate->evalfunc = evalfunc;
+			return true;
+		}
+	}
+
+	return false;
 }
