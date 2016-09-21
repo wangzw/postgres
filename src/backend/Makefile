@@ -49,7 +49,7 @@ ifeq ($(with_systemd),yes)
 LIBS += -lsystemd
 endif
 
-LIBS += $(shell llvm-config --ldflags --libs --system-libs) -lstdc++
+LIBS += $(shell llvm-config --ldflags --libs --system-libs mcjit passes all-targets) -lstdc++
 
 ##########################################################################
 
