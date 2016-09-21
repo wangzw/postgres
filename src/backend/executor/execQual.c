@@ -5194,7 +5194,13 @@ ExecInitExpr(Expr *node, PlanState *parent)
 
 	if (parent)
 	{
-		state = ExecCompileExpr(state, parent->ps_ExprContext);
+		ExprStateEvalFunc evalfunc = ExecCompileExpr(
+			state, parent->ps_ExprContext);
+
+		if (evalfunc)
+		{
+			state->evalfunc = evalfunc;
+		}
 	}
 
 	return state;

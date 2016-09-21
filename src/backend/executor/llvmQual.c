@@ -470,6 +470,29 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 }
 
 
+static bool
+IsExprSupported(ExprState *exprstate)
+{
+	switch (nodeTag(exprstate->expr))
+	{
+		case T_Const:
+		case T_RelabelType:
+		case T_RowExpr:
+		case T_OpExpr:
+		case T_FuncExpr:
+		case T_BoolExpr:
+		case T_CaseExpr:
+		case T_NullTest:
+		case T_Aggref:
+		case T_ScalarArrayOpExpr:
+			return true;
+
+		default:
+			return false;
+	}
+}
+
+
 static LLVMTupleAttr
 GenerateExpr(LLVMBuilderRef builder,
 			 ExprState *exprstate,
@@ -1281,11 +1304,8 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod)
 }
 
 
-/*
- * ExecCompileExpr: compile expression with LLVM MCJIT.
- */
-ExprState *
-ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
+static ExprStateEvalFunc
+CompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
 	LLVMModuleRef mod = InitModule("expr");
 	LLVMExecutionEngineRef engine = CreateCompiler(mod);
@@ -1318,9 +1338,19 @@ ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 	LLVMPrintModuleToFile(mod, "dump.opt.ll", NULL);
 #endif
 
-	exprstate->evalfunc = (ExprStateEvalFunc) LLVMGetFunctionAddress(
-		engine, LLVMGetValueName(ExecExpr_f));
-
 	LLVMDisposeBuilder(builder);
-	return exprstate;
+	return (ExprStateEvalFunc) LLVMGetFunctionAddress(
+		engine, LLVMGetValueName(ExecExpr_f));
+}
+
+
+/*
+ * ExecCompileExpr: compile expression with LLVM MCJIT.
+ */
+ExprStateEvalFunc
+ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
+{
+	return IsExprSupported(exprstate)
+		? CompileExpr(exprstate, econtext)
+		: NULL;
 }

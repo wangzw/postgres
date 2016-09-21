@@ -245,7 +245,7 @@ extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econt
 						  bool *isNull, ExprDoneCond *isDone);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
-extern ExprState *ExecCompileExpr(ExprState *node, ExprContext *econtext);
+extern ExprStateEvalFunc ExecCompileExpr(ExprState *node, ExprContext *econtext);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
