@@ -27,7 +27,7 @@ OBJS = execAmi.o execCurrent.o execGrouping.o execIndexing.o execJunk.o \
        nodeGroup.o nodeSubplan.o nodeSubqueryscan.o nodeTidscan.o \
        nodeForeignscan.o nodeWindowAgg.o tstoreReceiver.o tqueue.o spi.o
 
-llvmQual.o: CFLAGS += $(shell llvm-config --cflags)
+llvmQual.o: CFLAGS := $(shell llvm-config --cflags) $(CFLAGS)
 
 SUBDIRS := llvm_backend
 
