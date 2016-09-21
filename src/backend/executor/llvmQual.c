@@ -1374,6 +1374,11 @@ ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 		return changed;
 	}
 
+	if (IsA(exprstate, GenericExprState))
+	{
+		exprstate = ((GenericExprState *) exprstate)->arg;
+	}
+
 	if (IsExprSupported(exprstate))
 	{
 		ExprStateEvalFunc evalfunc = CompileExpr(exprstate, econtext);
