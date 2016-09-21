@@ -2,6 +2,7 @@
 
 #include "llvm_backend/llvm_backend_wrapper.h"
 #include "executor/executor.h"
+#include "optimizer/cost.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 
@@ -1353,7 +1354,7 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 bool
 ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
-	if (!exprstate)
+	if (!enable_llvm_jit || !exprstate)
 	{
 		return false;
 	}

@@ -879,6 +879,16 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
+		{"enable_llvm_jit", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables llvm jit of expressions."),
+			NULL
+		},
+		&enable_llvm_jit,
+		false,
+		NULL, NULL, NULL
+	},
+
+	{
 		{"geqo", PGC_USERSET, QUERY_TUNING_GEQO,
 			gettext_noop("Enables genetic query optimization."),
 			gettext_noop("This algorithm attempts to do planning without "

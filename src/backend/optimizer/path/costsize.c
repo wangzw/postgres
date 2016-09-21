@@ -127,6 +127,8 @@ bool		enable_material = true;
 bool		enable_mergejoin = true;
 bool		enable_hashjoin = true;
 
+bool        enable_llvm_jit = false;
+
 typedef struct
 {
 	PlannerInfo *root;
