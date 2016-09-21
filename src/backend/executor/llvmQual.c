@@ -498,6 +498,7 @@ static LLVMTupleAttr
 GenerateExpr(LLVMBuilderRef builder,
 			 ExprState *exprstate,
 			 ExprContext *econtext,
+			 LLVMValueRef rt_econtext,
 			 LLVMBasicBlockRef entry_bb,
 			 LLVMValueRef fcinfo_llvm)
 {
@@ -520,7 +521,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			GenericExprState *gstate = (GenericExprState *) exprstate;
 			ExprState *argstate = gstate->arg;
 			return GenerateExpr(
-				builder, argstate, econtext, entry_bb, fcinfo_llvm);
+				builder, argstate, econtext, rt_econtext, entry_bb,
+				fcinfo_llvm);
 		}
 
 		case T_RowExpr:
@@ -574,7 +576,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				};
 
 				attr[i] = GenerateExpr(
-					builder, argstate, econtext, entry_bb, fcinfo_llvm);
+					builder, argstate, econtext, rt_econtext, entry_bb,
+					fcinfo_llvm);
 
 				value = LLVMBuildInBoundsGEP(builder, values_llvm,
 											 index, 2, "values[i]");
@@ -660,7 +663,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			{
 				ExprState *argstate = lfirst(cell);
 				LLVMTupleAttr arg = GenerateExpr(
-					builder, argstate, econtext, entry_bb, fcinfo_llvm);
+					builder, argstate, econtext, rt_econtext, entry_bb,
+					fcinfo_llvm);
 
 				attr[i] = arg;
 				i++;
@@ -734,7 +738,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				Assert(boolexpr->args->length == 1);
 
 				result = GenerateExpr(
-					builder, argstate, econtext, entry_bb, fcinfo_llvm);
+					builder, argstate, econtext, rt_econtext, entry_bb,
+					fcinfo_llvm);
 
 				result.value = LLVMBuildIsNull(builder, result.value, "!val");
 				result.value = LLVMBuildZExt(
@@ -770,7 +775,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			{
 				ExprState *argstate = lfirst(cell);
 				LLVMTupleAttr arg = GenerateExpr(
-					builder, argstate, econtext, entry_bb, fcinfo_llvm);
+					builder, argstate, econtext, rt_econtext, entry_bb,
+					fcinfo_llvm);
 				LLVMBasicBlockRef next_bb = LLVMAppendBasicBlock(
 					function, "BoolExpr_next");
 				LLVMValueRef not_null, early_exit;
@@ -849,7 +855,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				LLVMValueRef istrue, isnotnull, cmp;
 
 				clause_value = GenerateExpr(
-					builder, casewhen->expr, econtext, entry_bb, fcinfo_llvm);
+					builder, casewhen->expr, econtext, rt_econtext, entry_bb,
+					fcinfo_llvm);
 				istrue = LLVMBuildIsNotNull(
 					builder, clause_value.value, "value");
 				isnotnull = LLVMBuildIsNull(
@@ -862,8 +869,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				 */
 				LLVMPositionBuilderAtEnd(builder, isTrue_bb);
 				clause_result = GenerateExpr(
-					builder, casewhen->result, econtext, entry_bb,
-					fcinfo_llvm);
+					builder, casewhen->result, econtext, rt_econtext,
+					entry_bb, fcinfo_llvm);
 				current_bb = LLVMGetInsertBlock(builder);
 				LLVMAddIncoming(result.value, &clause_result.value,
 								&current_bb, 1);
@@ -880,8 +887,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (caseExpr->defresult)
 			{
 				LLVMTupleAttr defresult = GenerateExpr(
-					builder, caseExpr->defresult, econtext, entry_bb,
-					fcinfo_llvm);
+					builder, caseExpr->defresult, econtext, rt_econtext,
+					entry_bb, fcinfo_llvm);
 				LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(builder);
 
 				LLVMAddIncoming(result.value, &defresult.value,
@@ -918,7 +925,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			 * entry
 			 */
 			result = GenerateExpr(
-				builder, nstate->arg, econtext, entry_bb, fcinfo_llvm);
+				builder, nstate->arg, econtext, rt_econtext, entry_bb,
+				fcinfo_llvm);
 			isnull = LLVMBuildIsNotNull(builder, result.isnull, "isnull");
 
 			switch (ntest->nulltesttype)
@@ -1029,7 +1037,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			 */
 			scalar = GenerateExpr(
 				builder, linitial(sstate->fxprstate.args), econtext,
-				entry_bb, fcinfo_llvm);
+				rt_econtext, entry_bb, fcinfo_llvm);
 
 			this_bb = LLVMGetInsertBlock(builder);
 			exit_bb = LLVMAppendBasicBlock(
@@ -1187,7 +1195,7 @@ GenerateExpr(LLVMBuilderRef builder,
 				builder, entry_bb, LLVMInt8Type(), "isnull_ptr");
 			LLVMValueRef args[] = {
 				ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), exprstate),
-				ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), econtext),
+				rt_econtext,
 				isnull_ptr,
 				LLVMConstNull(LLVMPointerType(LLVMInt32Type(), 0))
 			};
@@ -1320,9 +1328,10 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 	fcinfo = GenerateAllocFCInfo(builder);
 
 	{
-		LLVMTupleAttr result = GenerateExpr(
-			builder, exprstate, econtext, entry_bb, fcinfo);
+		LLVMValueRef rt_econtext = LLVMGetParam(ExecExpr_f, 1);
 		LLVMValueRef isnull_ptr = LLVMGetParam(ExecExpr_f, 2);
+		LLVMTupleAttr result = GenerateExpr(
+			builder, exprstate, econtext, rt_econtext, entry_bb, fcinfo);
 
 		LLVMBuildStore(builder, result.isnull, isnull_ptr);
 		LLVMBuildRet(builder, result.value);
