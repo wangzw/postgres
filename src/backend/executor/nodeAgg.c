@@ -2403,22 +2403,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	aggstate->sort_slot = ExecInitExtraTupleSlot(estate);
 
 	/*
-	 * initialize child expressions
-	 *
-	 * Note: ExecInitExpr finds Aggrefs for us, and also checks that no aggs
-	 * contain other agg calls in their arguments.  This would make no sense
-	 * under SQL semantics anyway (and it's forbidden by the spec). Because
-	 * that is true, we don't need to worry about evaluating the aggs in any
-	 * particular order.
-	 */
-	aggstate->ss.ps.targetlist = (List *)
-		ExecInitExpr((Expr *) node->plan.targetlist,
-					 (PlanState *) aggstate);
-	aggstate->ss.ps.qual = (List *)
-		ExecInitExpr((Expr *) node->plan.qual,
-					 (PlanState *) aggstate);
-
-	/*
 	 * Initialize child nodes.
 	 *
 	 * If we are doing a hashed aggregation then the child plan does not need
@@ -2592,6 +2576,22 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 
 		aggstate->pergroup = pergroup;
 	}
+
+	/*
+	 * initialize child expressions
+	 *
+	 * Note: ExecInitExpr finds Aggrefs for us, and also checks that no aggs
+	 * contain other agg calls in their arguments.  This would make no sense
+	 * under SQL semantics anyway (and it's forbidden by the spec). Because
+	 * that is true, we don't need to worry about evaluating the aggs in any
+	 * particular order.
+	 */
+	aggstate->ss.ps.targetlist = (List *)
+		ExecInitExpr((Expr *) node->plan.targetlist,
+					 (PlanState *) aggstate);
+	aggstate->ss.ps.qual = (List *)
+		ExecInitExpr((Expr *) node->plan.qual,
+					 (PlanState *) aggstate);
 
 	/* -----------------
 	 * Perform lookups of aggregate function info, and initialize the
