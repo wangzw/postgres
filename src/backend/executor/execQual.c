@@ -5210,7 +5210,10 @@ ExecInitExpr(Expr *node, PlanState *parent)
 {
 	ExprState *state = ExecInitExprNoJIT(node, parent);
 
-	ExecCompileExpr(state, parent->ps_ExprContext);
+	if (parent)
+	{
+		ExecCompileExpr(state, parent->ps_ExprContext);
+	}
 
 	return state;
 }
