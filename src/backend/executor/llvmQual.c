@@ -1330,10 +1330,32 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 	{
 		LLVMValueRef rt_econtext = LLVMGetParam(ExecExpr_f, 1);
 		LLVMValueRef isnull_ptr = LLVMGetParam(ExecExpr_f, 2);
+		LLVMValueRef isdone_ptr = LLVMGetParam(ExecExpr_f, 3);
 		LLVMTupleAttr result = GenerateExpr(
 			builder, exprstate, econtext, rt_econtext, entry_bb, fcinfo);
+		LLVMBasicBlockRef store_isdone_bb = LLVMAppendBasicBlock(
+			ExecExpr_f, "store_isdone");
+		LLVMBasicBlockRef return_bb = LLVMAppendBasicBlock(
+			ExecExpr_f, "return");
 
 		LLVMBuildStore(builder, result.isnull, isnull_ptr);
+		LLVMBuildCondBr(builder,
+						LLVMBuildIsNull(builder, isdone_ptr, "!isdone_ptr"),
+						return_bb, store_isdone_bb);
+
+		/*
+		 * store_isdone
+		 */
+		LLVMPositionBuilderAtEnd(builder, store_isdone_bb);
+		LLVMBuildStore(builder,
+					   LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0),
+					   isdone_ptr);
+		LLVMBuildBr(builder, return_bb);
+
+		/*
+		 * return
+		 */
+		LLVMPositionBuilderAtEnd(builder, return_bb);
 		LLVMBuildRet(builder, result.value);
 	}
 
