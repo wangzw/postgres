@@ -402,8 +402,11 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 					   fcinfo->flinfo),
 				   flinfo_ptr);
 
-	LLVMRemoveFunctionAttr(functionRef, LLVMNoInlineAttribute);
-	LLVMAddFunctionAttr(functionRef, LLVMAlwaysInlineAttribute);
+	if (LLVMIsAFunction(functionRef))
+	{
+		LLVMRemoveFunctionAttr(functionRef, LLVMNoInlineAttribute);
+		LLVMAddFunctionAttr(functionRef, LLVMAlwaysInlineAttribute);
+	}
 
 	LLVMGetParamTypes(LLVMGetElementType(LLVMTypeOf(functionRef)),
 					  &fcinfo_type);
