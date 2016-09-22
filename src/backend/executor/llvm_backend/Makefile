@@ -93,4 +93,12 @@ $(LLVM_BACKEND_LIST): %.bc: $(top_srcdir)/src/backend/%.c
 	mkdir -p $(dir $@)
 	$(CLANG) -c -emit-llvm -I $(top_srcdir)/src/include $(CLANG_OPTS) $< -o $@
 
+clean:
+	$(RM) llvm_backend_wrapper.cpp \
+		llvm_backend_wrapper.h \
+		llvm_backend.cpp \
+		llvm_backend.h
+	$(RM) $(wildcard llvm_backend.*.*)
+	find \( -name "*.bc" -o -type d -empty \) -delete
+
 include $(top_srcdir)/src/backend/common.mk

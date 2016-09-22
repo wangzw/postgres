@@ -13,6 +13,6 @@ top_builddir = ../../../../..
 include $(top_builddir)/src/Makefile.global
 
 CXXFLAGS := $(shell llvm-config --cxxflags)
-OBJS = prune_static_vars.so
+OBJS = prune_static_vars.o prune_static_vars.so
 
 include $(top_srcdir)/src/backend/common.mk
