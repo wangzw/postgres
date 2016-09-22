@@ -2593,19 +2593,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 		aggstate->pergroup = pergroup;
 	}
 
-	/*
-	 * compile child expressions
-	 *
-	 * This can't be done during ExecInitExpr because it would need
-	 * `ecxt_aggvalues` which are initialized later. ExecInitExpr can't be
-	 * moved here because the rest of the function relies on it being called
-	 * early (e.g. in ExecAssignResultTypeFromTL).
-	 */
-	ExecCompileExpr((ExprState *) aggstate->ss.ps.targetlist,
-					aggstate->ss.ps.ps_ExprContext);
-	ExecCompileExpr((ExprState *) aggstate->ss.ps.qual,
-					aggstate->ss.ps.ps_ExprContext);
-
 	/* -----------------
 	 * Perform lookups of aggregate function info, and initialize the
 	 * unchanging fields of the per-agg and per-trans data.
@@ -2906,6 +2893,19 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	 */
 	aggstate->numaggs = aggno + 1;
 	aggstate->numtrans = transno + 1;
+
+	/*
+	 * compile child expressions
+	 *
+	 * This can't be done during ExecInitExpr because it would need
+	 * `ecxt_aggvalues` and aggnos which are initialized later. ExecInitExpr
+	 * can't be moved here because the rest of the function relies on it
+	 * being called early (e.g. in ExecAssignResultTypeFromTL).
+	 */
+	ExecCompileExpr((ExprState *) aggstate->ss.ps.targetlist,
+					aggstate->ss.ps.ps_ExprContext);
+	ExecCompileExpr((ExprState *) aggstate->ss.ps.qual,
+					aggstate->ss.ps.ps_ExprContext);
 
 	return aggstate;
 }
