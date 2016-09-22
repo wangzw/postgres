@@ -28,6 +28,10 @@ OBJS = execAmi.o execCurrent.o execGrouping.o execIndexing.o execJunk.o \
        nodeForeignscan.o nodeWindowAgg.o tstoreReceiver.o tqueue.o spi.o
 
 llvmQual.o: CFLAGS := $(shell llvm-config --cflags) $(CFLAGS)
+llvmQual.o: llvm_backend/llvm_backend_wrapper.h
+
+llvm_backend/llvm_backend_wrapper.h:
+	llvm_backend/make-backend-wrapper.sh $(top_srcdir)/src
 
 SUBDIRS := llvm_backend
 

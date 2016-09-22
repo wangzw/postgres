@@ -36,12 +36,8 @@ CLANG_OPTS := $(shell pg_config --cflags) -g0 \
 	-Wno-missing-prototypes
 LLVM_BACKEND_FILE_LIMIT := 9000
 
-LLVM_BACKEND_SRC := llvm_backend.cpp
-LLVM_BACKEND_WRAPPER := llvm_backend_wrapper.cpp
-LLVM_BACKEND_LIB := llvm_backend.a
 OBJS := llvm_backend_wrapper.o llvm_backend.a
 SUBDIRS := passes
-EXTRA_PASSES := passes/prune_static_vars.so
 LLVM_BACKEND_LIST := access/common/heaptuple.bc \
         access/hash/hashfunc.bc \
         access/heap/tuptoaster.bc \
@@ -73,18 +69,18 @@ LLVM_BACKEND_LIST := access/common/heaptuple.bc \
 
 llvm_backend.o: llvm_backend.cpp llvm_backend_wrapper.o
 
-$(LLVM_BACKEND_SRC): $(EXTRA_PASSES) $(LLVM_BACKEND_LIST)
+llvm_backend.cpp: $(LLVM_BACKEND_LIST) passes/prune_static_vars.so
 	$(LLVM_LINK) $(filter %.bc,$^) -o backend.bc
 	$(OPT) $(OPT_OPTIONS) -disable-inlining backend.bc -o backend_opt.bc
 	$(OPT) -load passes/prune_static_vars.so -prune-static-vars backend_opt.bc -o backend_pruned.bc
 	$(OPT) $(OPT_OPTIONS) backend_pruned.bc -o backend_pruned_opt.bc
 	$(LLC) -march=cpp -cppgen=functions backend_pruned_opt.bc -o $@
 
-$(LLVM_BACKEND_WRAPPER): $(LLVM_BACKEND_SRC)
+llvm_backend_wrapper.cpp: llvm_backend.cpp
 	./backend-split.sh $(LLVM_BACKEND_FILE_LIMIT) $< |\
 		xargs ./make-backend-wrapper.sh $(top_srcdir)/src
 
-$(LLVM_BACKEND_LIB): $(LLVM_BACKEND_WRAPPER)
+llvm_backend.a: llvm_backend_wrapper.cpp
 	OBJ_PARTS=$$(echo llvm_backend.*.cpp | xargs -n1 sh -c 'echo $${0%.cpp}.o') &&\
 	$(MAKE) -f $(top_srcdir)/src/backend/common.mk CXXFLAGS="$(CXXFLAGS)" $$OBJ_PARTS &&\
 	$(AR) r $@ $$OBJ_PARTS
