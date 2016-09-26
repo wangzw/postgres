@@ -1259,7 +1259,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			result.value = LLVMBuildCall(
 				builder, evalfunc, args, lengthof(args), "value");
 			result.isNull = LLVMBuildLoad(builder, isNull_ptr, "isNull");
-			result.isDone = LLVMBuildLoad(builder, isDone_ptr, "isDOne");
+			result.isDone = LLVMBuildLoad(builder, isDone_ptr, "isDone");
 			return result;
 		}
 	}
