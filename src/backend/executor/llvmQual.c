@@ -11,6 +11,7 @@
 
 #include <llvm-c/Core.h>
 #include <llvm-c/ExecutionEngine.h>
+#include <llvm-c/Transforms/IPO.h>
 #include <llvm-c/Transforms/PassManagerBuilder.h>
 
 #include <fcntl.h>
@@ -1667,7 +1668,7 @@ InitModule(const char *module_name)
  * RunPasses: optimize generated module.
  */
 static void
-RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod)
+RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod, LLVMValueRef main)
 {
 #ifdef LLVM_DEBUG
 	char *error = NULL;
@@ -1683,6 +1684,10 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod)
 
 	LLVMPassManagerBuilderSetOptLevel(pmbuilder, 2);
 	LLVMPassManagerBuilderUseInlinerWithThreshold(pmbuilder, 275);
+
+	Assert(!LLVMGetNamedFunction(mod, "main"));
+	LLVMSetValueName(main, "main");
+	LLVMAddInternalizePass(pass, true);
 
 	LLVMPassManagerBuilderPopulateModulePassManager(pmbuilder, pass);
 
@@ -1825,7 +1830,7 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 	}
 
 	LLVMSetFunctionCallConv(ExecExpr_f, LLVMCCallConv);
-	RunPasses(engine, mod);
+	RunPasses(engine, mod, ExecExpr_f);
 
 	if (enable_llvm_dump)
 	{
