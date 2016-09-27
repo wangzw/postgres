@@ -13,8 +13,10 @@ BACKEND_WRAPPER_CPP=$OUT/llvm_backend_wrapper.cpp
 mkdir -p $OUT
 
 EXTRA_FUNC_LIST="\
+HeapTupleHeaderGetDatum
 heap_form_tuple
-HeapTupleHeaderGetDatum"
+heap_getsysattr
+slot_getsomeattrs"
 
 #
 # Generate BACKEND_WRAPPER_H, since it's the only file that doesn't

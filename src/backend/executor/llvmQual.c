@@ -1,6 +1,7 @@
 #include "postgres.h"
 
 #include "llvm_backend/llvm_backend_wrapper.h"
+#include "access/htup_details.h"
 #include "executor/executor.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/cost.h"
@@ -22,6 +23,28 @@ typedef struct LLVMTupleAttr {
 		{LLVMConstNull(LLVMInt64Type()), \
 		LLVMConstNull(LLVMInt8Type()), \
 		LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0)}
+
+
+/*
+ * RuntimeContext - struct holding run-time values loaded for each expression
+ * prior to execution
+ */
+typedef struct RuntimeContext {
+	LLVMValueRef isNullPtr, isDonePtr;  /* temporary vars  */
+	LLVMValueRef fcinfo;  /* FunctionCallInfo - used for function calls */
+	LLVMValueRef econtext;  /* dynamic ExprContext */
+
+	/*
+	 * TupleTableSlots loaded from ExprContext.
+	 */
+	LLVMValueRef scanSlot, scanSlotValues, scanSlotIsNull, scanSlotTuple,
+		scanSlotTupleDesc;
+	LLVMValueRef innerSlot, innerSlotValues, innerSlotIsNull, innerSlotTuple,
+		innerSlotTupleDesc;
+	LLVMValueRef outerSlot, outerSlotValues, outerSlotIsNull, outerSlotTuple,
+		outerSlotTupleDesc;
+} RuntimeContext;
+
 
 static LLVMValueRef
 ConstPointer(LLVMTypeRef pointer_type, void *pointer)
@@ -211,25 +234,21 @@ FunctionCallInfoType(LLVMBuilderRef builder)
 
 
 static LLVMValueRef
-BuildAllocaInBlock(LLVMBuilderRef builder, LLVMBasicBlockRef block,
-				   LLVMTypeRef type, const char *name)
+BuildLoadWithOffset(LLVMBuilderRef builder, LLVMValueRef pointer,
+					long offset, LLVMTypeRef base_type, const char *name)
 {
-	LLVMBasicBlockRef current_block = LLVMGetInsertBlock(builder);
+	LLVMValueRef gep_index = LLVMConstInt(LLVMInt64Type(), offset, 1);
+	LLVMValueRef value_ptr, value;
 
-	if (block != current_block)
-	{
-		LLVMValueRef terminator = LLVMGetBasicBlockTerminator(block);
-		LLVMValueRef alloca;
+	pointer = LLVMBuildPointerCast(
+		builder, pointer, LLVMPointerType(LLVMInt8Type(), 0),
+		LLVMGetValueName(pointer));
+	value_ptr = LLVMBuildPointerCast(
+		builder, LLVMBuildGEP(builder, pointer, &gep_index, 1, name),
+		LLVMPointerType(base_type, 0), name);
+	value = LLVMBuildLoad(builder, value_ptr, name);
 
-		LLVMPositionBuilderBefore(builder, terminator);
-		alloca = LLVMBuildAlloca(builder, type, name);
-		LLVMPositionBuilderAtEnd(builder, current_block);
-		return alloca;
-	}
-	else
-	{
-		return LLVMBuildAlloca(builder, type, name);
-	}
+	return value;
 }
 
 
@@ -512,6 +531,7 @@ IsExprSupported(ExprState *exprstate)
 	switch (nodeTag(exprstate->expr))
 	{
 		case T_Const:
+		case T_Var:
 		case T_RelabelType:
 		case T_RowExpr:
 		case T_OpExpr:
@@ -529,13 +549,243 @@ IsExprSupported(ExprState *exprstate)
 }
 
 
+/*
+ * AttributeStats - struct holding number of attributes per each tuple slot
+ * and whether any system attributes are accessed
+ */
+typedef struct AttributeStats
+{
+	int numScanAttrs, numInnerAttrs, numOuterAttrs;
+	bool hasScanSysAttr, hasInnerSysAttr, hasOuterSysAttr;
+} AttributeStats;
+
+
+static bool
+GetAttributeStatsForExpressionWalker(Node *node, AttributeStats *stats)
+{
+	if (!node)
+	{
+		return false;
+	}
+
+	switch (nodeTag(node))
+	{
+		case T_Var:
+		{
+			Var *variable = (Var *) node;
+			AttrNumber attno = variable->varattno;
+			int *numAttrs;
+			bool *hasSysAttr;
+
+			switch (variable->varno)
+			{
+				case INNER_VAR:
+					numAttrs = &stats->numInnerAttrs;
+					hasSysAttr = &stats->hasInnerSysAttr;
+					break;
+
+				case OUTER_VAR:
+					numAttrs = &stats->numOuterAttrs;
+					hasSysAttr = &stats->hasOuterSysAttr;
+					break;
+
+				default:
+					numAttrs = &stats->numScanAttrs;
+					hasSysAttr = &stats->hasScanSysAttr;
+			}
+
+			if (attno > 0)
+			{
+				*numAttrs = Max(*numAttrs, attno);
+			}
+			else if (attno < 0)
+			{
+				*hasSysAttr = true;
+			}
+			else
+			{
+				pg_unreachable();
+			}
+
+			break;
+		}
+
+		case T_Aggref:
+			return false;
+
+		default: break;
+	}
+
+	return expression_tree_walker(
+		node, GetAttributeStatsForExpressionWalker, stats);
+}
+
+
+/*
+ * GetAttributeStatsForExpression - create AttributeStats struct for
+ * expression
+ */
+static AttributeStats
+GetAttributeStatsForExpression(Expr *expr)
+{
+	AttributeStats stats = {};
+	GetAttributeStatsForExpressionWalker((Node *) expr, &stats);
+	return stats;
+}
+
+
+/*
+ * GetSomeAttrs - generate a call to `slot_getsomeattrs`
+ */
+static void
+GetSomeAttrs(LLVMBuilderRef builder, LLVMValueRef slot, int attnum)
+{
+	LLVMValueRef args[] = {
+		slot,
+		LLVMConstInt(LLVMInt32Type(), attnum, 0)
+	};
+
+	GenerateCallBackendWithTypeCheck(
+		builder, define_slot_getsomeattrs, args, lengthof(args));
+}
+
+
+/*
+ * LoadUsedAttrs - load attributes used in the expression
+ *
+ * For system attributes, this function preloads `tuple` and `tupleDesc` into
+ * RuntimeContext.
+ *
+ * For ordinary attributes, this function preloads `values` and `isNull`
+ * arrays into RuntimeContext.
+ */
+static void
+LoadUsedAttrs(LLVMBuilderRef builder, Expr *expr, RuntimeContext *rtcontext)
+{
+	AttributeStats stats = GetAttributeStatsForExpression(expr);
+
+	if (stats.hasScanSysAttr || stats.numScanAttrs > 0)
+	{
+		LLVMValueRef scanSlot = BuildLoadWithOffset(
+			builder, rtcontext->econtext,
+			offsetof(ExprContext, ecxt_scantuple),
+			LLVMPointerType(LLVMInt8Type(), 0), "scanSlot");
+
+		rtcontext->scanSlot = scanSlot;
+
+		if (stats.hasScanSysAttr)
+		{
+			rtcontext->scanSlotTuple = BuildLoadWithOffset(
+				builder, scanSlot, offsetof(TupleTableSlot, tts_tuple),
+				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotTuple");
+			rtcontext->scanSlotTupleDesc = BuildLoadWithOffset(
+				builder, scanSlot,
+				offsetof(TupleTableSlot, tts_tupleDescriptor),
+				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotTupleDesc");
+		}
+
+		if (stats.numScanAttrs > 0)
+		{
+			GetSomeAttrs(builder, scanSlot, stats.numScanAttrs);
+
+			rtcontext->scanSlotValues = BuildLoadWithOffset(
+				builder, scanSlot, offsetof(TupleTableSlot, tts_values),
+				LLVMPointerType(LLVMInt64Type(), 0), "scanSlotValues");
+			rtcontext->scanSlotIsNull = BuildLoadWithOffset(
+				builder, scanSlot, offsetof(TupleTableSlot, tts_isnull),
+				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotIsNull");
+		}
+	}
+
+	if (stats.hasInnerSysAttr || stats.numInnerAttrs > 0)
+	{
+		LLVMValueRef innerSlot = BuildLoadWithOffset(
+			builder, rtcontext->econtext,
+			offsetof(ExprContext, ecxt_innertuple),
+			LLVMPointerType(LLVMInt8Type(), 0), "innerSlot");
+
+		rtcontext->innerSlot = innerSlot;
+
+		if (stats.hasInnerSysAttr)
+		{
+			rtcontext->innerSlotTuple = BuildLoadWithOffset(
+				builder, innerSlot, offsetof(TupleTableSlot, tts_tuple),
+				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotTuple");
+			rtcontext->innerSlotTupleDesc = BuildLoadWithOffset(
+				builder, innerSlot,
+				offsetof(TupleTableSlot, tts_tupleDescriptor),
+				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotTupleDesc");
+		}
+
+		if (stats.numInnerAttrs > 0)
+		{
+			GetSomeAttrs(builder, innerSlot, stats.numInnerAttrs);
+
+			rtcontext->innerSlotValues = BuildLoadWithOffset(
+				builder, innerSlot, offsetof(TupleTableSlot, tts_values),
+				LLVMPointerType(LLVMInt64Type(), 0), "innerSlotValues");
+			rtcontext->innerSlotIsNull = BuildLoadWithOffset(
+				builder, innerSlot, offsetof(TupleTableSlot, tts_isnull),
+				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotIsNull");
+		}
+	}
+
+	if (stats.hasOuterSysAttr || stats.numOuterAttrs > 0)
+	{
+		LLVMValueRef outerSlot = BuildLoadWithOffset(
+			builder, rtcontext->econtext,
+			offsetof(ExprContext, ecxt_outertuple),
+			LLVMPointerType(LLVMInt8Type(), 0), "outerSlot");
+
+		rtcontext->outerSlot = outerSlot;
+
+		if (stats.hasOuterSysAttr)
+		{
+			rtcontext->outerSlotTuple = BuildLoadWithOffset(
+				builder, outerSlot, offsetof(TupleTableSlot, tts_tuple),
+				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotTuple");
+			rtcontext->outerSlotTupleDesc = BuildLoadWithOffset(
+				builder, outerSlot,
+				offsetof(TupleTableSlot, tts_tupleDescriptor),
+				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotTupleDesc");
+		}
+
+		if (stats.numOuterAttrs > 0)
+		{
+			GetSomeAttrs(builder, outerSlot, stats.numOuterAttrs);
+
+			rtcontext->outerSlotValues = BuildLoadWithOffset(
+				builder, outerSlot, offsetof(TupleTableSlot, tts_values),
+				LLVMPointerType(LLVMInt64Type(), 0), "outerSlotValues");
+			rtcontext->outerSlotIsNull = BuildLoadWithOffset(
+				builder, outerSlot, offsetof(TupleTableSlot, tts_isnull),
+				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotIsNull");
+		}
+	}
+}
+
+
+static LLVMValueRef
+GetSysAttr(LLVMBuilderRef builder, LLVMValueRef tuple, AttrNumber attno,
+		   LLVMValueRef tupleDesc, LLVMValueRef isNull)
+{
+	LLVMValueRef args[] = {
+		tuple,
+		LLVMConstInt(LLVMInt32Type(), attno, 1),
+		tupleDesc,
+		isNull
+	};
+
+	return GenerateCallBackendWithTypeCheck(
+		builder, define_heap_getsysattr, args, lengthof(args));
+}
+
+
 static LLVMTupleAttr
 GenerateExpr(LLVMBuilderRef builder,
 			 ExprState *exprstate,
 			 ExprContext *econtext,
-			 LLVMValueRef rt_econtext,
-			 LLVMBasicBlockRef entry_bb,
-			 LLVMValueRef fcinfo_llvm)
+			 RuntimeContext *rtcontext)
 {
 	switch (nodeTag(exprstate->expr))
 	{
@@ -551,13 +801,68 @@ GenerateExpr(LLVMBuilderRef builder,
 			return attr;
 		}
 
+		case T_Var:
+		{
+			Var *variable = (Var *) exprstate->expr;
+			AttrNumber attno = variable->varattno;
+			LLVMValueRef slotValues, slotIsNull, tuple, tupleDesc;
+			LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
+
+			switch (variable->varno)
+			{
+				case INNER_VAR:
+					slotValues = rtcontext->innerSlotValues;
+					slotIsNull = rtcontext->innerSlotIsNull;
+					tuple = rtcontext->innerSlotTuple;
+					tupleDesc = rtcontext->innerSlotTupleDesc;
+					break;
+
+				case OUTER_VAR:
+					slotValues = rtcontext->outerSlotValues;
+					slotIsNull = rtcontext->outerSlotIsNull;
+					tuple = rtcontext->outerSlotTuple;
+					tupleDesc = rtcontext->outerSlotTupleDesc;
+					break;
+
+				default:
+					slotValues = rtcontext->scanSlotValues;
+					slotIsNull = rtcontext->scanSlotIsNull;
+					tuple = rtcontext->scanSlotTuple;
+					tupleDesc = rtcontext->scanSlotTupleDesc;
+			}
+
+			if (attno > 0)
+			{
+				Assert(slotValues && slotIsNull);
+
+				result.value = BuildLoadWithOffset(
+					builder, slotValues, sizeof(Datum) * (attno - 1),
+					LLVMInt64Type(), "var_value");
+				result.isNull = BuildLoadWithOffset(
+					builder, slotIsNull, sizeof(bool) * (attno - 1),
+					LLVMInt8Type(), "var_isNull");
+			}
+			else if (attno < 0)
+			{
+				result.value = GetSysAttr(
+					builder, tuple, attno, tupleDesc, rtcontext->isNullPtr);
+				result.isNull = LLVMBuildLoad(
+					builder, rtcontext->isNullPtr, "var_isNull");
+			}
+			else
+			{
+				pg_unreachable();
+			}
+
+			return result;
+		}
+
 		case T_RelabelType:
 		{
 			GenericExprState *gstate = (GenericExprState *) exprstate;
 			ExprState *argstate = gstate->arg;
 			return GenerateExpr(
-				builder, argstate, econtext, rt_econtext, entry_bb,
-				fcinfo_llvm);
+				builder, argstate, econtext, rtcontext);
 		}
 
 		case T_RowExpr:
@@ -612,8 +917,7 @@ GenerateExpr(LLVMBuilderRef builder,
 				};
 
 				attr[i] = GenerateExpr(
-					builder, argstate, econtext, rt_econtext, entry_bb,
-					fcinfo_llvm);
+					builder, argstate, econtext, rtcontext);
 
 				value = LLVMBuildInBoundsGEP(builder, values_llvm,
 											 index, 2, "values[i]");
@@ -654,6 +958,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			bool strict, retSet, hasSetArg;
 			LLVMTupleAttr result, func_result;
 			LLVMTupleAttr attr[list_length(fexprstate->args)];
+			LLVMValueRef fcinfo_llvm;
 			ListCell* cell;
 			short i;
 
@@ -702,8 +1007,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			{
 				ExprState *argstate = lfirst(cell);
 				LLVMTupleAttr arg = GenerateExpr(
-					builder, argstate, econtext, rt_econtext, entry_bb,
-					fcinfo_llvm);
+					builder, argstate, econtext, rtcontext);
 
 				attr[i] = arg;
 				i++;
@@ -735,7 +1039,8 @@ GenerateExpr(LLVMBuilderRef builder,
 
 			retSet = fexprstate->func.fn_retset;
 			hasSetArg = expression_returns_set((Node *) func->args);
-			fcinfo_llvm = GenerateInitFCInfo(builder, fcinfo, fcinfo_llvm);
+			fcinfo_llvm = GenerateInitFCInfo(
+				builder, fcinfo, rtcontext->fcinfo);
 
 			if (retSet)
 			{
@@ -788,8 +1093,7 @@ GenerateExpr(LLVMBuilderRef builder,
 				Assert(boolexpr->args->length == 1);
 
 				result = GenerateExpr(
-					builder, argstate, econtext, rt_econtext, entry_bb,
-					fcinfo_llvm);
+					builder, argstate, econtext, rtcontext);
 
 				result.value = LLVMBuildIsNull(builder, result.value, "!val");
 				result.value = LLVMBuildZExt(
@@ -825,8 +1129,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			{
 				ExprState *argstate = lfirst(cell);
 				LLVMTupleAttr arg = GenerateExpr(
-					builder, argstate, econtext, rt_econtext, entry_bb,
-					fcinfo_llvm);
+					builder, argstate, econtext, rtcontext);
 				LLVMBasicBlockRef next_bb = LLVMAppendBasicBlock(
 					function, "BoolExpr_next");
 				LLVMValueRef not_null, early_exit;
@@ -905,8 +1208,7 @@ GenerateExpr(LLVMBuilderRef builder,
 				LLVMValueRef istrue, isnotnull, cmp;
 
 				clause_value = GenerateExpr(
-					builder, casewhen->expr, econtext, rt_econtext, entry_bb,
-					fcinfo_llvm);
+					builder, casewhen->expr, econtext, rtcontext);
 				istrue = LLVMBuildIsNotNull(
 					builder, clause_value.value, "value");
 				isnotnull = LLVMBuildIsNull(
@@ -919,8 +1221,7 @@ GenerateExpr(LLVMBuilderRef builder,
 				 */
 				LLVMPositionBuilderAtEnd(builder, isTrue_bb);
 				clause_result = GenerateExpr(
-					builder, casewhen->result, econtext, rt_econtext,
-					entry_bb, fcinfo_llvm);
+					builder, casewhen->result, econtext, rtcontext);
 				current_bb = LLVMGetInsertBlock(builder);
 				LLVMAddIncoming(result.value, &clause_result.value,
 								&current_bb, 1);
@@ -937,8 +1238,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (caseExpr->defresult)
 			{
 				LLVMTupleAttr defresult = GenerateExpr(
-					builder, caseExpr->defresult, econtext, rt_econtext,
-					entry_bb, fcinfo_llvm);
+					builder, caseExpr->defresult, econtext, rtcontext);
 				LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(builder);
 
 				LLVMAddIncoming(result.value, &defresult.value,
@@ -975,8 +1275,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			 * entry
 			 */
 			result = GenerateExpr(
-				builder, nstate->arg, econtext, rt_econtext, entry_bb,
-				fcinfo_llvm);
+				builder, nstate->arg, econtext, rtcontext);
 			isNull = LLVMBuildIsNotNull(builder, result.isNull, "isNull");
 
 			switch (ntest->nulltesttype)
@@ -1090,7 +1389,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			 */
 			scalar = GenerateExpr(
 				builder, linitial(sstate->fxprstate.args), econtext,
-				rt_econtext, entry_bb, fcinfo_llvm);
+				rtcontext);
 
 			this_bb = LLVMGetInsertBlock(builder);
 			exit_bb = LLVMAppendBasicBlock(
@@ -1165,7 +1464,7 @@ GenerateExpr(LLVMBuilderRef builder,
 					LLVMBasicBlockRef next_bb = LLVMAppendBasicBlock(
 						function, "ScalarArrayOpExpr_next");
 					LLVMValueRef true_llvm = LLVMConstAllOnes(LLVMInt1Type());
-					LLVMValueRef isNull, early_exit, phi;
+					LLVMValueRef fcinfo_llvm, isNull, early_exit, phi;
 					LLVMTupleAttr thisresult;
 
 					LLVMMoveBasicBlockAfter(next_bb, this_bb);
@@ -1179,7 +1478,7 @@ GenerateExpr(LLVMBuilderRef builder,
 						LLVMInt8Type(), elt_isNull, 0);
 
 					fcinfo_llvm = GenerateInitFCInfo(
-						builder, fcinfo, fcinfo_llvm);
+						builder, fcinfo, rtcontext->fcinfo);
 					thisresult = GenerateFunctionCallNCollNull(
 						builder, fcinfo, fcinfo_llvm, attr, false, false);
 					isNull = LLVMBuildIsNotNull(
@@ -1244,25 +1543,52 @@ GenerateExpr(LLVMBuilderRef builder,
 				&exprstate->evalfunc);
 			LLVMValueRef evalfunc = LLVMBuildLoad(
 				builder, evalfunc_ptr, "evalfunc");
-			LLVMValueRef isNull_ptr = BuildAllocaInBlock(
-				builder, entry_bb, LLVMInt8Type(), "isNull_ptr");
-			LLVMValueRef isDone_ptr = BuildAllocaInBlock(
-				builder, entry_bb, LLVMInt32Type(), "isDone_ptr");
 			LLVMValueRef args[] = {
 				ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), exprstate),
-				rt_econtext,
-				isNull_ptr,
-				isDone_ptr
+				rtcontext->econtext,
+				rtcontext->isNullPtr,
+				rtcontext->isDonePtr
 			};
 
 			LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
 			result.value = LLVMBuildCall(
 				builder, evalfunc, args, lengthof(args), "value");
-			result.isNull = LLVMBuildLoad(builder, isNull_ptr, "isNull");
-			result.isDone = LLVMBuildLoad(builder, isDone_ptr, "isDone");
+			result.isNull = LLVMBuildLoad(
+				builder, rtcontext->isNullPtr, "isNull");
+			result.isDone = LLVMBuildLoad(
+				builder, rtcontext->isDonePtr, "isDone");
 			return result;
 		}
 	}
+}
+
+
+static RuntimeContext *
+InitializeRuntimeContext(LLVMBuilderRef builder, LLVMValueRef ExecExpr,
+						 ExprState *exprstate)
+{
+	RuntimeContext *rtcontext = palloc0(sizeof *rtcontext);
+
+	/*
+	 * Allocate convenience local vars.
+	 */
+	rtcontext->isNullPtr = LLVMBuildAlloca(
+		builder, LLVMInt8Type(), "&isNull");
+	rtcontext->isDonePtr = LLVMBuildAlloca(
+		builder, LLVMInt32Type(), "&isDone");
+	rtcontext->fcinfo = GenerateAllocFCInfo(builder);
+
+	/*
+	 * Get dynamic ExprContext from function arguments.
+	 */
+	rtcontext->econtext = LLVMGetParam(ExecExpr, 1);
+
+	/*
+	 * Preload all used attributes in Vars.
+	 */
+	LoadUsedAttrs(builder, exprstate->expr, rtcontext);
+
+	return rtcontext;
 }
 
 
@@ -1378,17 +1704,16 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		mod, "ExecExpr", ExprStateEvalFuncType());
 	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlock(ExecExpr_f, "entry");
 	LLVMBuilderRef builder = LLVMCreateBuilder();
-	LLVMValueRef fcinfo;
 
 	LLVMPositionBuilderAtEnd(builder, entry_bb);
-	fcinfo = GenerateAllocFCInfo(builder);
 
 	{
-		LLVMValueRef rt_econtext = LLVMGetParam(ExecExpr_f, 1);
+		RuntimeContext *rtcontext = InitializeRuntimeContext(
+			builder, ExecExpr_f, exprstate);
 		LLVMValueRef isNull_ptr = LLVMGetParam(ExecExpr_f, 2);
 		LLVMValueRef isdone_ptr = LLVMGetParam(ExecExpr_f, 3);
 		LLVMTupleAttr result = GenerateExpr(
-			builder, exprstate, econtext, rt_econtext, entry_bb, fcinfo);
+			builder, exprstate, econtext, rtcontext);
 		LLVMBasicBlockRef store_isdone_bb = LLVMAppendBasicBlock(
 			ExecExpr_f, "store_isdone");
 		LLVMBasicBlockRef return_bb = LLVMAppendBasicBlock(
@@ -1411,6 +1736,8 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		 */
 		LLVMPositionBuilderAtEnd(builder, return_bb);
 		LLVMBuildRet(builder, result.value);
+
+		pfree(rtcontext);
 	}
 
 #ifdef LLVM_DUMP
