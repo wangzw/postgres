@@ -4,13 +4,19 @@
 #include "access/htup_details.h"
 #include "executor/executor.h"
 #include "nodes/nodeFuncs.h"
-#include "optimizer/cost.h"
+#include "nodes/print.h"
+#include "optimizer/planmain.h"
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 
 #include <llvm-c/Core.h>
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm-c/Transforms/PassManagerBuilder.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 
 typedef struct LLVMTupleAttr {
@@ -1736,6 +1742,78 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod)
 }
 
 
+static char *
+GetDumpFileName(const char *base_format)
+{
+	static unsigned probe = 0;
+	const size_t bufsize = 32;
+	char filename_format[bufsize];
+	char filename[bufsize];
+	struct stat statres;
+
+	snprintf(filename_format, bufsize, "llvm_dump/%s", base_format);
+
+	/*
+	 * Start with the last probe, trying to advance either backward or
+	 * forward.
+	 */
+	if (snprintf(filename, bufsize, filename_format, probe),
+		!stat(filename,  &statres))
+	{
+		/*
+		 * Advance forward.
+		 */
+		do {
+			snprintf(filename, bufsize, filename_format, ++probe);
+		} while (!stat(filename,  &statres));
+	}
+	else
+	{
+		/*
+		 * Advance backward.
+		 */
+		while (probe != 0 &&
+			   (snprintf(filename, bufsize, filename_format, probe - 1),
+				stat(filename,  &statres) < 0))
+		{
+			probe -= 1;
+		}
+
+		snprintf(filename, bufsize, filename_format, probe);
+	}
+
+	return strdup(filename);
+}
+
+
+static void
+DumpExpression(Expr *expr, const char *format)
+{
+	char *filename = GetDumpFileName(format);
+	int file = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	int stdout_dup = dup(STDOUT_FILENO);
+
+	fflush(stdout);
+	dup2(file, STDOUT_FILENO);
+	pprint(expr);
+	fflush(stdout);
+	dup2(stdout_dup, STDOUT_FILENO);
+
+	close(stdout_dup);
+	close(file);
+	free(filename);
+}
+
+
+static void
+DumpModule(LLVMModuleRef mod, const char *format)
+{
+	char *filename = GetDumpFileName(format);
+	LLVMPrintModuleToFile(mod, filename, NULL);
+	free(filename);
+}
+
+
 static ExprStateEvalFunc
 CompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
@@ -1746,6 +1824,11 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		mod, "ExecExpr", ExprStateEvalFuncType());
 	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlock(ExecExpr_f, "entry");
 	LLVMBuilderRef builder = LLVMCreateBuilder();
+
+	if (enable_llvm_dump)
+	{
+		DumpExpression(exprstate->expr, "expr.%03u");
+	}
 
 	LLVMPositionBuilderAtEnd(builder, entry_bb);
 
@@ -1782,16 +1865,18 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		pfree(rtcontext);
 	}
 
-#ifdef LLVM_DUMP
-	LLVMPrintModuleToFile(mod, "dump.ll", NULL);
-#endif
+	if (enable_llvm_dump)
+	{
+		DumpModule(mod, "dump.%03u.ll");
+	}
 
 	LLVMSetFunctionCallConv(ExecExpr_f, LLVMCCallConv);
 	RunPasses(engine, mod);
 
-#ifdef LLVM_DUMP
-	LLVMPrintModuleToFile(mod, "dump.opt.ll", NULL);
-#endif
+	if (enable_llvm_dump)
+	{
+		DumpModule(mod, "dump.%03u.opt.ll");
+	}
 
 	func_addr = (ExprStateEvalFunc) LLVMGetFunctionAddress(
 		engine, LLVMGetValueName(ExecExpr_f));

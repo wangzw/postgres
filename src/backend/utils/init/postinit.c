@@ -18,6 +18,8 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm-c/Target.h>
