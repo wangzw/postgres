@@ -1739,6 +1739,7 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod)
 static ExprStateEvalFunc
 CompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
+	ExprStateEvalFunc func_addr;
 	LLVMModuleRef mod = InitModule("expr");
 	LLVMExecutionEngineRef engine = CreateCompiler(mod);
 	LLVMValueRef ExecExpr_f = LLVMAddFunctionWithPrefix(
@@ -1792,9 +1793,13 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 	LLVMPrintModuleToFile(mod, "dump.opt.ll", NULL);
 #endif
 
-	LLVMDisposeBuilder(builder);
-	return (ExprStateEvalFunc) LLVMGetFunctionAddress(
+	func_addr = (ExprStateEvalFunc) LLVMGetFunctionAddress(
 		engine, LLVMGetValueName(ExecExpr_f));
+
+	LLVMDisposeBuilder(builder);
+	LLVMDisposeModule(mod);
+
+	return func_addr;
 }
 
 
