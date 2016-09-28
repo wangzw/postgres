@@ -536,16 +536,72 @@ IsExprSupported(ExprState *exprstate)
 		case T_RowExpr:
 		case T_OpExpr:
 		case T_FuncExpr:
-		case T_BoolExpr:
-		case T_CaseExpr:
-		case T_NullTest:
 		case T_Aggref:
-		case T_ScalarArrayOpExpr:
+		case T_BoolExpr:
 			return true;
+
+		case T_CaseExpr:
+		{
+			CaseExprState *caseExpr = (CaseExprState *) exprstate;
+
+			if (caseExpr->arg)
+				return false;
+
+			return true;
+		}
+
+		case T_NullTest:
+		{
+			NullTestState *nstate = (NullTestState *) exprstate;
+			NullTest *ntest = (NullTest *) nstate->xprstate.expr;
+
+			if (ntest->argisrow)
+				return false;
+
+			return true;
+		}
+
+		case T_ScalarArrayOpExpr:
+		{
+			ScalarArrayOpExpr *opexpr = (ScalarArrayOpExpr *) exprstate->expr;
+
+			if (!IsA(lsecond(opexpr->args), Const))
+				return false;
+
+			return true;
+		}
 
 		default:
 			return false;
 	}
+}
+
+static LLVMTupleAttr
+GenerateDefaultExpr(LLVMBuilderRef builder,
+		ExprState *exprstate,
+		RuntimeContext *rtcontext)
+{
+	LLVMValueRef evalfunc_ptr = ConstPointer(
+			LLVMPointerType(
+				LLVMPointerType(ExprStateEvalFuncType(), 0), 0),
+			&exprstate->evalfunc);
+	LLVMValueRef evalfunc = LLVMBuildLoad(
+			builder, evalfunc_ptr, "evalfunc");
+	LLVMValueRef args[] = {
+		ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), exprstate),
+		rtcontext->econtext,
+		rtcontext->isNullPtr,
+		rtcontext->isDonePtr
+	};
+
+	LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
+	result.value = LLVMBuildCall(
+			builder, evalfunc, args, lengthof(args), "value");
+	result.isNull = LLVMBuildLoad(
+			builder, rtcontext->isNullPtr, "isNull");
+	result.isDone = LLVMBuildLoad(
+			builder, rtcontext->isDonePtr, "isDone");
+	return result;
 }
 
 
@@ -787,6 +843,9 @@ GenerateExpr(LLVMBuilderRef builder,
 			 ExprContext *econtext,
 			 RuntimeContext *rtcontext)
 {
+	if (!IsExprSupported(exprstate))
+		return GenerateDefaultExpr(builder, exprstate, rtcontext); 
+
 	switch (nodeTag(exprstate->expr))
 	{
 		case T_Const:
@@ -1098,7 +1157,6 @@ GenerateExpr(LLVMBuilderRef builder,
 				result.value = LLVMBuildIsNull(builder, result.value, "!val");
 				result.value = LLVMBuildZExt(
 					builder, result.value, LLVMInt64Type(), "!val");
-				result.isNull = LLVMConstInt(LLVMInt8Type(), 0, 0);
 				return result;
 			}
 
@@ -1184,9 +1242,6 @@ GenerateExpr(LLVMBuilderRef builder,
 				function, "CaseExpr_done");
 			LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
 
-			if (caseExpr->arg)
-				Assert(false);
-
 			LLVMPositionBuilderAtEnd(builder, done);
 			result.value = LLVMBuildPhi(
 				builder, LLVMInt64Type(), "case_result");
@@ -1268,8 +1323,6 @@ GenerateExpr(LLVMBuilderRef builder,
 			NullTest *ntest = (NullTest *) nstate->xprstate.expr;
 			LLVMValueRef isNull;
 			LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
-
-			Assert(!ntest->argisrow);
 
 			/*
 			 * entry
@@ -1358,8 +1411,8 @@ GenerateExpr(LLVMBuilderRef builder,
 			init_fcache(opexpr->opfuncid, opexpr->inputcollid,
 						&sstate->fxprstate, econtext->ecxt_per_query_memory,
 						true);
+
 			Assert(!sstate->fxprstate.func.fn_retset);
-			Assert(IsA(arrayexpr, Const));
 
 			if (arrayexpr->constisnull)
 			{
@@ -1537,27 +1590,7 @@ GenerateExpr(LLVMBuilderRef builder,
 
 		default:
 		{
-			LLVMValueRef evalfunc_ptr = ConstPointer(
-				LLVMPointerType(
-					LLVMPointerType(ExprStateEvalFuncType(), 0), 0),
-				&exprstate->evalfunc);
-			LLVMValueRef evalfunc = LLVMBuildLoad(
-				builder, evalfunc_ptr, "evalfunc");
-			LLVMValueRef args[] = {
-				ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), exprstate),
-				rtcontext->econtext,
-				rtcontext->isNullPtr,
-				rtcontext->isDonePtr
-			};
-
-			LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
-			result.value = LLVMBuildCall(
-				builder, evalfunc, args, lengthof(args), "value");
-			result.isNull = LLVMBuildLoad(
-				builder, rtcontext->isNullPtr, "isNull");
-			result.isDone = LLVMBuildLoad(
-				builder, rtcontext->isDonePtr, "isDone");
-			return result;
+			return (LLVMTupleAttr)INIT_LLVMTUPLEATTR;
 		}
 	}
 }
