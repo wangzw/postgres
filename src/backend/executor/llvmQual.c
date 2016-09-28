@@ -461,8 +461,14 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	else
 		if (hasSetArg)
 		{
-			Assert(fcinfo->nargs == 1);
-			result.isDone = attr[0].isDone;
+			for (arg_index = 0; arg_index < fcinfo->nargs; ++arg_index)
+			{
+				LLVMValueRef attr_isDone = LLVMBuildICmp(
+						builder, LLVMIntEQ, attr[arg_index].isDone,
+						LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0), "attr_isDone");
+				result.isDone = LLVMBuildSelect(builder, attr_isDone,
+						result.isDone, attr[arg_index].isDone, "select_isDone");
+			}
 		}
 		else
 			result.isDone = LLVMConstInt(
@@ -1010,8 +1016,8 @@ GenerateExpr(LLVMBuilderRef builder,
 		case T_FuncExpr:
 		{
 			FuncExprState *fexprstate = (FuncExprState *) exprstate;
-			FuncExpr   *func = (FuncExpr *) fexprstate->xprstate.expr;
 			FunctionCallInfo fcinfo = &fexprstate->fcinfo_data;
+			Node *args = NULL;
 			Oid funcid = 0;
 			Oid inputcollid = 0;
 			bool strict, retSet, hasSetArg;
@@ -1028,12 +1034,14 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (IsA(exprstate->expr, OpExpr))
 			{
 				OpExpr *op = (OpExpr *) exprstate->expr;
+				args = (Node *)op->args;
 				funcid = op->opfuncid;
 				inputcollid = op->inputcollid;
 			}
 			else if (IsA(exprstate->expr, FuncExpr))
 			{
 				FuncExpr *func_expr = (FuncExpr *) exprstate->expr;
+				args = (Node *)func_expr->args;
 				funcid = func_expr->funcid;
 				inputcollid = func_expr->inputcollid;
 			}
@@ -1097,7 +1105,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			}
 
 			retSet = fexprstate->func.fn_retset;
-			hasSetArg = expression_returns_set((Node *) func->args);
+			hasSetArg = expression_returns_set(args);
 			fcinfo_llvm = GenerateInitFCInfo(
 				builder, fcinfo, rtcontext->fcinfo);
 
