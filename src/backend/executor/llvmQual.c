@@ -543,7 +543,6 @@ IsExprSupported(ExprState *exprstate)
 	switch (nodeTag(exprstate->expr))
 	{
 		case T_Const:
-		case T_Var:
 		case T_RelabelType:
 		case T_RowExpr:
 		case T_OpExpr:
@@ -551,6 +550,11 @@ IsExprSupported(ExprState *exprstate)
 		case T_Aggref:
 		case T_BoolExpr:
 			return true;
+
+		case T_Var:
+		{
+			return IsA(exprstate, ExprState);
+		}
 
 		case T_CaseExpr:
 		{
@@ -669,10 +673,6 @@ GetAttributeStatsForExpressionWalker(Node *node, AttributeStats *stats)
 			else if (attno < 0)
 			{
 				*hasSysAttr = true;
-			}
-			else
-			{
-				pg_unreachable();
 			}
 
 			break;
@@ -856,7 +856,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			 RuntimeContext *rtcontext)
 {
 	if (!IsExprSupported(exprstate))
-		return GenerateDefaultExpr(builder, exprstate, rtcontext); 
+		return GenerateDefaultExpr(builder, exprstate, rtcontext);
 
 	switch (nodeTag(exprstate->expr))
 	{
@@ -1604,7 +1604,7 @@ GenerateExpr(LLVMBuilderRef builder,
 
 		default:
 		{
-			return (LLVMTupleAttr)INIT_LLVMTUPLEATTR;
+			return (LLVMTupleAttr) INIT_LLVMTUPLEATTR;
 		}
 	}
 }
