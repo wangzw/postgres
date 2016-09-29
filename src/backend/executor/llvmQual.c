@@ -32,6 +32,18 @@ typedef struct LLVMTupleAttr {
 
 
 /*
+ * Field numbers.
+ */
+#define EXPRCONTEXT_SCANTUPLE_FIELDNO 1
+#define EXPRCONTEXT_INNERTUPLE_FIELDNO 2
+#define EXPRCONTEXT_OUTERTUPLE_FIELDNO 3
+#define TUPLETABLESLOT_TUPLE_FIELDNO 5
+#define TUPLETABLESLOT_TUPLEDESCRIPTOR_FIELDNO 6
+#define TUPLETABLESLOT_VALUES_FIELDNO 10
+#define TUPLETABLESLOT_ISNULL_FIELDNO 11
+
+
+/*
  * RuntimeContext - struct holding run-time values loaded for each expression
  * prior to execution
  */
@@ -155,8 +167,8 @@ static LLVMTypeRef
 ExprStateEvalFuncType(void)
 {
 	LLVMTypeRef arg_types[] = {
-		LLVMPointerType(LLVMInt8Type(), 0),
-		LLVMPointerType(LLVMInt8Type(), 0),
+		LLVMPointerType(BackendStructType(ExprState), 0),
+		LLVMPointerType(BackendStructType(ExprContext), 0),
 		LLVMPointerType(LLVMInt8Type(), 0),
 		LLVMPointerType(LLVMInt32Type(), 0)
 	};
@@ -166,27 +178,9 @@ ExprStateEvalFuncType(void)
 	StaticAssertStmt(sizeof(bool) == sizeof(int8), "bool is 8-bit");
 	StaticAssertStmt(sizeof(ExprDoneCond) == sizeof(int32),
 					 "ExprDoneCond is 32-bit");
+	StaticAssertStmt(sizeof(Datum) == sizeof(int64), "Datum is 32-bit");
 
 	return function_type;
-}
-
-
-static LLVMValueRef
-BuildLoadWithOffset(LLVMBuilderRef builder, LLVMValueRef pointer,
-					long offset, LLVMTypeRef base_type, const char *name)
-{
-	LLVMValueRef gep_index = LLVMConstInt(LLVMInt64Type(), offset, 1);
-	LLVMValueRef value_ptr, value;
-
-	pointer = LLVMBuildPointerCast(
-		builder, pointer, LLVMPointerType(LLVMInt8Type(), 0),
-		LLVMGetValueName(pointer));
-	value_ptr = LLVMBuildPointerCast(
-		builder, LLVMBuildGEP(builder, pointer, &gep_index, 1, name),
-		LLVMPointerType(base_type, 0), name);
-	value = LLVMBuildLoad(builder, value_ptr, name);
-
-	return value;
 }
 
 
@@ -524,6 +518,7 @@ IsExprSupported(ExprState *exprstate)
 	}
 }
 
+
 static LLVMTupleAttr
 GenerateDefaultExpr(LLVMBuilderRef builder,
 		ExprState *exprstate,
@@ -536,7 +531,9 @@ GenerateDefaultExpr(LLVMBuilderRef builder,
 	LLVMValueRef evalfunc = LLVMBuildLoad(
 			builder, evalfunc_ptr, "evalfunc");
 	LLVMValueRef args[] = {
-		ConstPointer(LLVMPointerType(LLVMInt8Type(), 0), exprstate),
+		ConstPointer(
+			LLVMPointerType(BackendStructType(ExprState), 0),
+			exprstate),
 		rtcontext->econtext,
 		rtcontext->isNullPtr,
 		rtcontext->isDonePtr
@@ -666,100 +663,142 @@ LoadUsedAttrs(LLVMBuilderRef builder, Expr *expr, RuntimeContext *rtcontext)
 
 	if (stats.hasScanSysAttr || stats.numScanAttrs > 0)
 	{
-		LLVMValueRef scanSlot = BuildLoadWithOffset(
-			builder, rtcontext->econtext,
-			offsetof(ExprContext, ecxt_scantuple),
-			LLVMPointerType(LLVMInt8Type(), 0), "scanSlot");
+		LLVMValueRef scanSlot = LLVMBuildLoad(
+			builder,
+			LLVMBuildStructGEP(
+				builder, rtcontext->econtext, EXPRCONTEXT_SCANTUPLE_FIELDNO,
+				"scanSlotPtr"),
+			"scanSlot");
 
 		rtcontext->scanSlot = scanSlot;
 
 		if (stats.hasScanSysAttr)
 		{
-			rtcontext->scanSlotTuple = BuildLoadWithOffset(
-				builder, scanSlot, offsetof(TupleTableSlot, tts_tuple),
-				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotTuple");
-			rtcontext->scanSlotTupleDesc = BuildLoadWithOffset(
-				builder, scanSlot,
-				offsetof(TupleTableSlot, tts_tupleDescriptor),
-				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotTupleDesc");
+			rtcontext->scanSlotTuple = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, scanSlot, TUPLETABLESLOT_TUPLE_FIELDNO,
+					"scanSlotTuplePtr"),
+				"scanSlotTuple");
+			rtcontext->scanSlotTupleDesc = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, scanSlot,
+					TUPLETABLESLOT_TUPLEDESCRIPTOR_FIELDNO,
+					"scanSlotTupleDescPtr"),
+				"scanSlotTupleDesc");
 		}
 
 		if (stats.numScanAttrs > 0)
 		{
 			GetSomeAttrs(builder, scanSlot, stats.numScanAttrs);
 
-			rtcontext->scanSlotValues = BuildLoadWithOffset(
-				builder, scanSlot, offsetof(TupleTableSlot, tts_values),
-				LLVMPointerType(LLVMInt64Type(), 0), "scanSlotValues");
-			rtcontext->scanSlotIsNull = BuildLoadWithOffset(
-				builder, scanSlot, offsetof(TupleTableSlot, tts_isnull),
-				LLVMPointerType(LLVMInt8Type(), 0), "scanSlotIsNull");
+			rtcontext->scanSlotValues = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, scanSlot, TUPLETABLESLOT_VALUES_FIELDNO,
+					"scanSlotValuesPtr"),
+				"scanSlotValues");
+			rtcontext->scanSlotIsNull = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, scanSlot, TUPLETABLESLOT_ISNULL_FIELDNO,
+					"scanSlotIsNullPtr"),
+				"scanSlotIsNull");
 		}
 	}
 
 	if (stats.hasInnerSysAttr || stats.numInnerAttrs > 0)
 	{
-		LLVMValueRef innerSlot = BuildLoadWithOffset(
-			builder, rtcontext->econtext,
-			offsetof(ExprContext, ecxt_innertuple),
-			LLVMPointerType(LLVMInt8Type(), 0), "innerSlot");
+		LLVMValueRef innerSlot = LLVMBuildLoad(
+			builder,
+			LLVMBuildStructGEP(
+				builder, rtcontext->econtext, EXPRCONTEXT_INNERTUPLE_FIELDNO,
+				"innerSlotPtr"),
+			"innerSlot");
 
 		rtcontext->innerSlot = innerSlot;
 
 		if (stats.hasInnerSysAttr)
 		{
-			rtcontext->innerSlotTuple = BuildLoadWithOffset(
-				builder, innerSlot, offsetof(TupleTableSlot, tts_tuple),
-				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotTuple");
-			rtcontext->innerSlotTupleDesc = BuildLoadWithOffset(
-				builder, innerSlot,
-				offsetof(TupleTableSlot, tts_tupleDescriptor),
-				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotTupleDesc");
+			rtcontext->innerSlotTuple = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, innerSlot, TUPLETABLESLOT_TUPLE_FIELDNO,
+					"innerSlotTuplePtr"),
+				"innerSlotTuple");
+			rtcontext->innerSlotTupleDesc = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, innerSlot,
+					TUPLETABLESLOT_TUPLEDESCRIPTOR_FIELDNO,
+					"innerSlotTupleDescPtr"),
+				"innerSlotTupleDesc");
 		}
 
 		if (stats.numInnerAttrs > 0)
 		{
 			GetSomeAttrs(builder, innerSlot, stats.numInnerAttrs);
 
-			rtcontext->innerSlotValues = BuildLoadWithOffset(
-				builder, innerSlot, offsetof(TupleTableSlot, tts_values),
-				LLVMPointerType(LLVMInt64Type(), 0), "innerSlotValues");
-			rtcontext->innerSlotIsNull = BuildLoadWithOffset(
-				builder, innerSlot, offsetof(TupleTableSlot, tts_isnull),
-				LLVMPointerType(LLVMInt8Type(), 0), "innerSlotIsNull");
+			rtcontext->innerSlotValues = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, innerSlot, TUPLETABLESLOT_VALUES_FIELDNO,
+					"innerSlotValuesPtr"),
+				"innerSlotValues");
+			rtcontext->innerSlotIsNull = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, innerSlot, TUPLETABLESLOT_ISNULL_FIELDNO,
+					"innerSlotIsNullPtr"),
+				"innerSlotIsNull");
 		}
 	}
 
 	if (stats.hasOuterSysAttr || stats.numOuterAttrs > 0)
 	{
-		LLVMValueRef outerSlot = BuildLoadWithOffset(
-			builder, rtcontext->econtext,
-			offsetof(ExprContext, ecxt_outertuple),
-			LLVMPointerType(LLVMInt8Type(), 0), "outerSlot");
+		LLVMValueRef outerSlot = LLVMBuildLoad(
+			builder,
+			LLVMBuildStructGEP(
+				builder, rtcontext->econtext, EXPRCONTEXT_OUTERTUPLE_FIELDNO,
+				"outerSlotPtr"),
+			"outerSlot");
 
 		rtcontext->outerSlot = outerSlot;
 
 		if (stats.hasOuterSysAttr)
 		{
-			rtcontext->outerSlotTuple = BuildLoadWithOffset(
-				builder, outerSlot, offsetof(TupleTableSlot, tts_tuple),
-				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotTuple");
-			rtcontext->outerSlotTupleDesc = BuildLoadWithOffset(
-				builder, outerSlot,
-				offsetof(TupleTableSlot, tts_tupleDescriptor),
-				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotTupleDesc");
+			rtcontext->outerSlotTuple = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, outerSlot, TUPLETABLESLOT_TUPLE_FIELDNO,
+					"outerSlotTuplePtr"),
+				"outerSlotTuple");
+			rtcontext->outerSlotTupleDesc = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, outerSlot,
+					TUPLETABLESLOT_TUPLEDESCRIPTOR_FIELDNO,
+					"outerSlotTupleDPtresc"),
+				"outerSlotTupleDesc");
 		}
 
 		if (stats.numOuterAttrs > 0)
 		{
 			GetSomeAttrs(builder, outerSlot, stats.numOuterAttrs);
 
-			rtcontext->outerSlotValues = BuildLoadWithOffset(
-				builder, outerSlot, offsetof(TupleTableSlot, tts_values),
-				LLVMPointerType(LLVMInt64Type(), 0), "outerSlotValues");
-			rtcontext->outerSlotIsNull = BuildLoadWithOffset(
-				builder, outerSlot, offsetof(TupleTableSlot, tts_isnull),
-				LLVMPointerType(LLVMInt8Type(), 0), "outerSlotIsNull");
+			rtcontext->outerSlotValues = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, outerSlot, TUPLETABLESLOT_VALUES_FIELDNO,
+					"outerSlotValuesPtr"),
+				"outerSlotValues");
+			rtcontext->outerSlotIsNull = LLVMBuildLoad(
+				builder,
+				LLVMBuildStructGEP(
+					builder, outerSlot, TUPLETABLESLOT_ISNULL_FIELDNO,
+					"outerSlotIsNullPtr"),
+				"outerSlotIsNull");
 		}
 	}
 }
@@ -836,14 +875,21 @@ GenerateExpr(LLVMBuilderRef builder,
 
 			if (attno > 0)
 			{
+				LLVMValueRef varIndex = LLVMConstInt(
+					LLVMInt32Type(), attno - 1, 0);
+
 				Assert(slotValues && slotIsNull);
 
-				result.value = BuildLoadWithOffset(
-					builder, slotValues, sizeof(Datum) * (attno - 1),
-					LLVMInt64Type(), "var_value");
-				result.isNull = BuildLoadWithOffset(
-					builder, slotIsNull, sizeof(bool) * (attno - 1),
-					LLVMInt8Type(), "var_isNull");
+				result.value = LLVMBuildLoad(
+					builder,
+					LLVMBuildGEP(
+						builder, slotValues, &varIndex, 1, "var_valuePtr"),
+					"var_value");
+				result.isNull = LLVMBuildLoad(
+					builder,
+					LLVMBuildGEP(
+						builder, slotIsNull, &varIndex, 1, "var_isNullPtr"),
+					"var_isNull");
 			}
 			else if (attno < 0)
 			{
