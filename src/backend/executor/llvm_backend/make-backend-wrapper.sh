@@ -18,9 +18,20 @@ heap_form_tuple
 heap_getsysattr
 slot_getsomeattrs"
 
+FUNCTION_LIST=$(\
+	grep --only-matching --no-filename --perl-regexp \
+		 '(?<=Function\* ).*(?=\(Module \*mod\) \{)' $@ |
+		sort)
+
+TYPE_LIST=$(\
+	grep --only-matching --no-filename --perl-regexp \
+		 '(?<=Type\* ).*(?=\(Module \*mod\) \{)' $@ |
+		sort)
+
+sed -i "1i#include \"$(basename $BACKEND_H)\"\n" $@
+
 #
-# Generate BACKEND_WRAPPER_H, since it's the only file that doesn't
-# depend on FUNCTION_LIST.
+# Generate BACKEND_WRAPPER_H.
 #
 cat > $BACKEND_WRAPPER_H <<-EOF
 	#ifndef LLVM_BACKEND_WRAPPER_H
@@ -34,20 +45,11 @@ cat > $BACKEND_WRAPPER_H <<-EOF
 	$(awk '{ print "LLVMValueRef define_" $0 "(LLVMModuleRef);" }' \
 		<<<"$EXTRA_FUNC_LIST")
 
+	$(awk '{ print "LLVMTypeRef " $0 "(LLVMModuleRef);" }' \
+		<<<"$TYPE_LIST")
+
 	#endif
 EOF
-
-# If no more arguments, then called only for BACKEND_WRAPPER_H.
-if [ $# -eq 0 ]; then
-	exit
-fi
-
-FUNCTION_LIST=$(\
-	grep --only-matching --no-filename --perl-regexp \
-		 '(?<=Function\* ).*(?=\(Module \*mod\) \{)' $@ |
-		sort)
-
-sed -i "1i#include \"$(basename $BACKEND_H)\"\n" $@
 
 #
 # Generate BACKEND_H.
@@ -78,6 +80,8 @@ cat > $BACKEND_H <<-EOF
 	using namespace llvm;
 
 	$(awk '{ print "Function* " $0 "(Module *mod);" }' <<<"$FUNCTION_LIST")
+
+	$(awk '{ print "Type* " $0 "(Module *mod);" }' <<<"$TYPE_LIST")
 
 	#endif
 EOF
@@ -140,4 +144,10 @@ cat > $BACKEND_WRAPPER_CPP <<-EOF
 		"{\n" \
 		"    return wrap(define_" $0 "(unwrap(mod)));\n" \
 		"}" }' <<<"$EXTRA_FUNC_LIST")
+	$(awk '{ print "\n" \
+		"extern \"C\" LLVMTypeRef\n" \
+		 $0 "(LLVMModuleRef mod)\n" \
+		"{\n" \
+		"    return wrap(" $0 "(unwrap(mod)));\n" \
+		"}" }' <<<"$TYPE_LIST")
 EOF

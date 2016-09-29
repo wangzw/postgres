@@ -139,59 +139,12 @@ GenerateMemSet(LLVMBuilderRef builder, size_t alignment, LLVMValueRef dest,
 
 
 static LLVMTypeRef
-GetTypeByNameInContext(LLVMContextRef context, const char *type_name)
+BackendStructType(LLVMTypeRef (*define_func)(LLVMModuleRef))
 {
-	/*
-	 * This function is used to surpass the limitation of having to provide
-	 * a module reference for `LLVMGetTypeByName`. It uses the fact that
-	 * it is the context that LLVM named structs  are internally registered
-	 * in, not the module.
-	 */
-	LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("", context);
-	LLVMTypeRef type = LLVMGetTypeByName(mod, type_name);
+	LLVMModuleRef mod = LLVMModuleCreateWithName("");
+	LLVMTypeRef type = define_func(mod);
 	LLVMDisposeModule(mod);
 	return type;
-}
-
-
-static LLVMTypeRef
-GetTypeByName(const char *type_name)
-{
-	return GetTypeByNameInContext(LLVMGetGlobalContext(), type_name);
-}
-
-
-static LLVMTypeRef
-AddStructTypeIfNotExists(const char *name, LLVMTypeRef *types, int ntypes)
-{
-	LLVMTypeRef struct_type = GetTypeByName(name);
-
-	if (!struct_type)
-	{
-		struct_type = LLVMStructCreateNamed(LLVMGetGlobalContext(), name);
-		LLVMStructSetBody(struct_type, types, ntypes, 0);
-	}
-
-	return struct_type;
-}
-
-
-static LLVMTypeRef
-ReturnSetInfoType(void)
-{
-	LLVMTypeRef fields[] = {
-		LLVMInt32Type(),
-		LLVMPointerType(LLVMInt8Type(), 0),
-		LLVMPointerType(LLVMInt8Type(), 0),
-		LLVMInt32Type(),
-		LLVMInt32Type(),
-		LLVMInt32Type(),
-		LLVMPointerType(LLVMInt8Type(), 0),
-		LLVMPointerType(LLVMInt8Type(), 0),
-	};
-
-	return AddStructTypeIfNotExists(
-		"ReturnSetInfoLLVM", fields, lengthof(fields));
 }
 
 
@@ -212,30 +165,6 @@ ExprStateEvalFuncType(void)
 					 "ExprDoneCond is 32-bit");
 
 	return function_type;
-}
-
-
-static LLVMTypeRef
-FunctionCallInfoType(LLVMBuilderRef builder)
-{
-	LLVMTypeRef fcinfo_type;
-
-	LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(builder);
-	LLVMValueRef this_function = LLVMGetBasicBlockParent(this_bb);
-	LLVMModuleRef mod = LLVMGetGlobalParent(this_function);
-	/*
-	 * Hack: by defining(generating) a function(dpi) whose argument is
-	 * the type of FunctionCallInfo structure we can get FunctionCallInfo
-	 * as LLVMTypeRef.
-	 * dpi (1610) - returns the constant PI
-	 */
-	LLVMValueRef functionRef = define_llvm_function(1610, mod);
-	LLVMTypeRef function_type = LLVMGetElementType(
-			LLVMTypeOf(functionRef));
-
-	LLVMGetParamTypes(function_type, &fcinfo_type);
-
-	return LLVMGetElementType(fcinfo_type);
 }
 
 
@@ -348,7 +277,7 @@ GenerateAllocFCInfo(LLVMBuilderRef builder)
 	LLVMTypeRef fcinfo_type;
 	LLVMValueRef fcinfo_llvm;
 
-	fcinfo_type = FunctionCallInfoType(builder);
+	fcinfo_type = BackendStructType(define_struct_FunctionCallInfoData);
 
 	fcinfo_llvm = LLVMBuildAlloca(builder, fcinfo_type, "fcinfo");
 
@@ -374,7 +303,7 @@ define_llvm_pg_function(LLVMBuilderRef builder, FmgrInfo *flinfo)
 		char func_name[16];
 		LLVMTypeRef fcinfo_type, function_type_llvm;
 
-		fcinfo_type = FunctionCallInfoType(builder);
+		fcinfo_type = BackendStructType(define_struct_FunctionCallInfoData);
 		fcinfo_type = LLVMPointerType(fcinfo_type, 0);
 		function_type_llvm = LLVMFunctionType(
 				LLVMInt64Type(), &fcinfo_type, 1, 0);
@@ -448,7 +377,8 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 			LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
 		resultinfo_ptr = LLVMBuildBitCast(builder,
 			LLVMBuildLoad(builder, resultinfo_ptr, ""),
-			LLVMPointerType(ReturnSetInfoType(), 0), "");
+			LLVMPointerType(BackendStructType(define_struct_ReturnSetInfo),
+							0), "");
 		rsinfo_isDone_ptr =
 			LLVMBuildStructGEP(builder, resultinfo_ptr, 5, "&isDone");
 	}
@@ -490,7 +420,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 {
 	LLVMValueRef resultinfo_ptr =
 		LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
-	LLVMTypeRef rsinfoType = ReturnSetInfoType();
+	LLVMTypeRef rsinfoType = BackendStructType(define_struct_ReturnSetInfo);
 	LLVMValueRef rsinfo_ptr = LLVMBuildAlloca(builder, rsinfoType, "rsinfo");
 
 	LLVMValueRef rsinfo_type_ptr =

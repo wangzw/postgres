@@ -75,6 +75,7 @@ llvm_backend.cpp: $(LLVM_BACKEND_LIST) passes/prune_static_vars.so
 	$(OPT) -load passes/prune_static_vars.so -prune-static-vars backend_opt.bc -o backend_pruned.bc
 	$(OPT) $(OPT_OPTIONS) backend_pruned.bc -o backend_pruned_opt.bc
 	$(LLC) -march=cpp -cppgen=functions backend_pruned_opt.bc -o $@
+	$(LLC) -march=cpp -cppgen=types backend_pruned_opt.bc -o - >>$@
 
 llvm_backend_wrapper.cpp: llvm_backend.cpp
 	./backend-split.sh $(LLVM_BACKEND_FILE_LIMIT) $< |\
