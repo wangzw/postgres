@@ -9,7 +9,7 @@ BACKEND_FILE=$2
 rm -f ${BACKEND_FILE%%.cpp}.*.cpp
 
 grep --line-number --only-matching --perl-regexp \
-	 '(?<=Function\* ).*(?=\(Module \*mod\) \{)' $BACKEND_FILE |
+	 '(?<=Function|Type\* ).*(?=\(Module \*mod\) \{)' $BACKEND_FILE |
 	awk -v SPLIT_LIMIT=$SPLIT_LIMIT \
 		'{ if (NR % SPLIT_LIMIT == 1) print $0 }' |
 	cut --delimiter=: --fields=1 |
