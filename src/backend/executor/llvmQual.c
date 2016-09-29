@@ -139,13 +139,16 @@ GenerateMemSet(LLVMBuilderRef builder, size_t alignment, LLVMValueRef dest,
 
 
 static LLVMTypeRef
-BackendStructType(LLVMTypeRef (*define_func)(LLVMModuleRef))
+BackendStructTypeFunc(LLVMTypeRef (*define_func)(LLVMModuleRef))
 {
 	LLVMModuleRef mod = LLVMModuleCreateWithName("");
 	LLVMTypeRef type = define_func(mod);
 	LLVMDisposeModule(mod);
 	return type;
 }
+
+#define BackendStructType(name) BackendStructTypeFunc(define_struct_##name)
+#define BackendUnionType(name) BackendStructTypeFunc(define_union_##name)
 
 
 static LLVMTypeRef
@@ -277,7 +280,7 @@ GenerateAllocFCInfo(LLVMBuilderRef builder)
 	LLVMTypeRef fcinfo_type;
 	LLVMValueRef fcinfo_llvm;
 
-	fcinfo_type = BackendStructType(define_struct_FunctionCallInfoData);
+	fcinfo_type = BackendStructType(FunctionCallInfoData);
 
 	fcinfo_llvm = LLVMBuildAlloca(builder, fcinfo_type, "fcinfo");
 
@@ -303,7 +306,7 @@ define_llvm_pg_function(LLVMBuilderRef builder, FmgrInfo *flinfo)
 		char func_name[16];
 		LLVMTypeRef fcinfo_type, function_type_llvm;
 
-		fcinfo_type = BackendStructType(define_struct_FunctionCallInfoData);
+		fcinfo_type = BackendStructType(FunctionCallInfoData);
 		fcinfo_type = LLVMPointerType(fcinfo_type, 0);
 		function_type_llvm = LLVMFunctionType(
 				LLVMInt64Type(), &fcinfo_type, 1, 0);
@@ -377,8 +380,7 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 			LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
 		resultinfo_ptr = LLVMBuildBitCast(builder,
 			LLVMBuildLoad(builder, resultinfo_ptr, ""),
-			LLVMPointerType(BackendStructType(define_struct_ReturnSetInfo),
-							0), "");
+			LLVMPointerType(BackendStructType(ReturnSetInfo), 0), "");
 		rsinfo_isDone_ptr =
 			LLVMBuildStructGEP(builder, resultinfo_ptr, 5, "&isDone");
 	}
@@ -420,7 +422,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 {
 	LLVMValueRef resultinfo_ptr =
 		LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
-	LLVMTypeRef rsinfoType = BackendStructType(define_struct_ReturnSetInfo);
+	LLVMTypeRef rsinfoType = BackendStructType(ReturnSetInfo);
 	LLVMValueRef rsinfo_ptr = LLVMBuildAlloca(builder, rsinfoType, "rsinfo");
 
 	LLVMValueRef rsinfo_type_ptr =
