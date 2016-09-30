@@ -1617,33 +1617,6 @@ InitializeRuntimeContext(LLVMBuilderRef builder, LLVMValueRef ExecExpr,
 }
 
 
-/*
- * CreateCompiler: create execution engine for module.
- */
-static LLVMExecutionEngineRef
-CreateCompiler(LLVMModuleRef mod)
-{
-	LLVMExecutionEngineRef engine;
-	struct LLVMMCJITCompilerOptions options;
-	LLVMTargetDataRef target_data;
-	char *error = NULL;
-
-	LLVMInitializeMCJITCompilerOptions(&options, sizeof(options));
-	options.OptLevel = 3;
-	if (LLVMCreateMCJITCompilerForModule(&engine, mod, &options,
-										 sizeof(options), &error) != 0)
-	{
-		fprintf(stderr, "%s\n", error);
-		LLVMDisposeMessage(error);
-		abort();
-	}
-
-	target_data = LLVMGetExecutionEngineTargetData(engine);
-	LLVMSetDataLayout(mod, LLVMCopyStringRepOfTargetData(target_data));
-	return engine;
-}
-
-
 static void
 isinf_codegen(LLVMModuleRef mod)
 {
@@ -1797,11 +1770,14 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 {
 	ExprStateEvalFunc func_addr;
 	LLVMModuleRef mod = InitModule("expr");
-	LLVMExecutionEngineRef engine = CreateCompiler(mod);
+	LLVMExecutionEngineRef engine = econtext->ecxt_estate->es_engine;
 	LLVMValueRef ExecExpr_f = LLVMAddFunctionWithPrefix(
 		mod, "ExecExpr", ExprStateEvalFuncType());
 	LLVMBasicBlockRef entry_bb = LLVMAppendBasicBlock(ExecExpr_f, "entry");
 	LLVMBuilderRef builder = LLVMCreateBuilder();
+	LLVMTargetDataRef target_data = LLVMGetExecutionEngineTargetData(engine);
+
+	LLVMSetDataLayout(mod, LLVMCopyStringRepOfTargetData(target_data));
 
 	if (enable_llvm_dump)
 	{
@@ -1856,8 +1832,12 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		DumpModule(mod, "dump.%03u.opt.ll");
 	}
 
-	func_addr = (ExprStateEvalFunc) LLVMGetFunctionAddress(
-		engine, LLVMGetValueName(ExecExpr_f));
+	LLVMAddModule(engine, mod);
+
+	func_addr = (ExprStateEvalFunc) LLVMGetPointerToGlobal(
+		engine, ExecExpr_f);
+
+	LLVMRemoveModule(engine, mod, &mod, NULL);
 
 	LLVMDisposeBuilder(builder);
 	LLVMDisposeModule(mod);

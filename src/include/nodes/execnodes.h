@@ -25,6 +25,7 @@
 #include "utils/tuplestore.h"
 #include "utils/tuplesort.h"
 
+typedef struct LLVMOpaqueExecutionEngine *LLVMExecutionEngineRef;
 
 /* ----------------
  *	  IndexInfo information
@@ -421,6 +422,8 @@ typedef struct EState
 	HeapTuple  *es_epqTuple;	/* array of EPQ substitute tuples */
 	bool	   *es_epqTupleSet; /* true if EPQ tuple is provided */
 	bool	   *es_epqScanDone; /* true if EPQ tuple has been fetched */
+
+	LLVMExecutionEngineRef es_engine; /* LLVM Executor Engine */
 } EState;
 
 

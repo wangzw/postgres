@@ -564,6 +564,9 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
                          [Define to 1 to build with assertion checks. (--enable-cassert)])])
 
 
+CFLAGS="$(llvm-config --cflags) $CFLAGS"
+
+
 #
 # Include directories
 #

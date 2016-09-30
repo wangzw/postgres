@@ -5268,6 +5268,9 @@ fi
 
 
 
+CFLAGS="$(llvm-config --cflags) $CFLAGS"
+
+
 #
 # Include directories
 #
