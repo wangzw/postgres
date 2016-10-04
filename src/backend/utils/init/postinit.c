@@ -18,11 +18,11 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 
-#include <llvm-c/ExecutionEngine.h>
-#include <llvm-c/Target.h>
+#ifdef LLVM_JIT
+# include <llvm-c/ExecutionEngine.h>
+# include <llvm-c/Target.h>
+#endif
 
 #include "access/heapam.h"
 #include "access/htup_details.h"
@@ -65,7 +65,6 @@
 #include "utils/syscache.h"
 #include "utils/timeout.h"
 #include "utils/tqual.h"
-
 
 static HeapTuple GetDatabaseTuple(const char *dbname);
 static HeapTuple GetDatabaseTupleByOid(Oid dboid);
@@ -510,6 +509,7 @@ InitializeMaxBackends(void)
 		elog(ERROR, "too many backends configured");
 }
 
+#ifdef LLVM_JIT
 /*
  * Initialize LLVM JIT used for query compilation.
  */
@@ -521,6 +521,7 @@ InitLLVMJIT(void)
 	LLVMInitializeNativeAsmPrinter();
 	LLVMInitializeNativeAsmParser();
 }
+#endif
 
 /*
  * Early initialization of a backend (either standalone or under postmaster).
@@ -657,10 +658,12 @@ InitPostgres(const char *in_dbname, Oid dboid, const char *username,
 	InitCatalogCache();
 	InitPlanCache();
 
+#ifdef LLVM_JIT
 	/*
 	 * Initialize LLVM JIT compiler.
 	 */
 	InitLLVMJIT();
+#endif
 
 	/* Initialize portal manager */
 	EnablePortalManager();

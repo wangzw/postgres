@@ -47,7 +47,9 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
-#include <llvm-c/ExecutionEngine.h>
+#ifdef LLVM_JIT
+# include <llvm-c/ExecutionEngine.h>
+#endif
 
 static bool get_last_attnums(Node *node, ProjectionInfo *projInfo);
 static void ShutdownExprContext(ExprContext *econtext, bool isCommit);
@@ -142,6 +144,7 @@ CreateExecutorState(void)
 	estate->es_epqTupleSet = NULL;
 	estate->es_epqScanDone = NULL;
 
+#ifdef LLVM_JIT
 	/*
 	 * Create LLVM Executor Engine.
 	 */
@@ -164,6 +167,7 @@ CreateExecutorState(void)
 		LLVMRemoveModule(estate->es_engine, init_module, &init_module, NULL);
 		LLVMDisposeModule(init_module);
 	}
+#endif
 
 	/*
 	 * Return the executor state structure
@@ -208,11 +212,13 @@ FreeExecutorState(EState *estate)
 		/* FreeExprContext removed the list link for us */
 	}
 
+#ifdef LLVM_JIT
 	/*
 	 * Delete LLVM Executor Engine.
 	 */
 	if (enable_llvm_jit)
 		LLVMDisposeExecutionEngine(estate->es_engine);
+#endif
 
 	/*
 	 * Free the per-query memory context, thereby releasing all working

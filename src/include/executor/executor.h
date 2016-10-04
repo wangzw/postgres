@@ -246,12 +246,15 @@ extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econt
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
 extern ExprState *ExecInitExprNoJIT(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
-extern bool ExecCompileExpr(ExprState *node, ExprContext *econtext);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
 extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo,
 			ExprDoneCond *isDone);
+
+#ifdef LLVM_JIT
+extern bool ExecCompileExpr(ExprState *node, ExprContext *econtext);
+#endif
 
 /*
  * prototypes from functions in execScan.c

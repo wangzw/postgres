@@ -29,8 +29,11 @@ typedef enum
 #define DEFAULT_CURSOR_TUPLE_FRACTION 0.1
 extern double cursor_tuple_fraction;
 extern int	force_parallel_mode;
+
+#ifdef LLVM_JIT
 extern bool enable_llvm_jit;
 extern bool enable_llvm_dump;
+#endif
 
 /* query_planner callback to compute query_pathkeys */
 typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);

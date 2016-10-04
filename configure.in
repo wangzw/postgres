@@ -549,6 +549,15 @@ AC_SUBST(TAS)
 
 
 #
+# LLVM JIT
+#
+PGAC_ARG_BOOL(enable, llvm-jit, no, [turn on llvm jit],
+              [AC_DEFINE([LLVM_JIT], 1,
+                         [Define to 1 to build with LLVM JIT. (--enable-llvm-jit)])])
+AC_SUBST(enable_llvm_jit)
+
+
+#
 # Automatic dependency tracking
 #
 PGAC_ARG_BOOL(enable, depend, no, [turn on automatic dependency tracking],
@@ -564,7 +573,9 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
                          [Define to 1 to build with assertion checks. (--enable-cassert)])])
 
 
-CFLAGS="$(llvm-config --cflags) $CFLAGS"
+if test "$enable_llvm_jit" = yes ; then
+  CFLAGS="$(llvm-config --cflags) $CFLAGS"
+fi
 
 
 #

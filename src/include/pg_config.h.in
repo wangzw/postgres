@@ -711,6 +711,9 @@
 /* Define to the appropriate snprintf length modifier for 64-bit ints. */
 #undef INT64_MODIFIER
 
+/* Define to 1 to build with LLVM JIT. (--enable-llvm-jit) */
+#undef LLVM_JIT
+
 /* Define to 1 if `locale_t' requires <xlocale.h>. */
 #undef LOCALE_T_IN_XLOCALE
 

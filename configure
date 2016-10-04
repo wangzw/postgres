@@ -719,6 +719,7 @@ with_tcl
 enable_thread_safety
 INCLUDES
 autodepend
+enable_llvm_jit
 TAS
 GCC
 CPP
@@ -817,6 +818,7 @@ with_segsize
 with_wal_blocksize
 with_wal_segsize
 with_CC
+enable_llvm_jit
 enable_depend
 enable_cassert
 enable_thread_safety
@@ -1484,6 +1486,7 @@ Optional Features:
   --enable-coverage       build with coverage testing instrumentation
   --enable-dtrace         build with DTrace support
   --enable-tap-tests      enable TAP tests (requires Perl and IPC::Run)
+  --enable-llvm-jit       turn on llvm jit
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --disable-thread-safety disable thread-safety in client libraries
@@ -5210,6 +5213,37 @@ fi
 
 
 #
+# LLVM JIT
+#
+
+
+# Check whether --enable-llvm-jit was given.
+if test "${enable_llvm_jit+set}" = set; then :
+  enableval=$enable_llvm_jit;
+  case $enableval in
+    yes)
+
+$as_echo "#define LLVM_JIT 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-llvm-jit option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_llvm_jit=no
+
+fi
+
+
+
+
+
+#
 # Automatic dependency tracking
 #
 
@@ -5268,7 +5302,9 @@ fi
 
 
 
-CFLAGS="$(llvm-config --cflags) $CFLAGS"
+if test "$enable_llvm_jit" = yes ; then
+  CFLAGS="$(llvm-config --cflags) $CFLAGS"
+fi
 
 
 #

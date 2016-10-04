@@ -5210,10 +5210,12 @@ ExecInitExpr(Expr *node, PlanState *parent)
 {
 	ExprState *state = ExecInitExprNoJIT(node, parent);
 
+#ifdef LLVM_JIT
 	if (parent)
 	{
 		ExecCompileExpr(state, parent->ps_ExprContext);
 	}
+#endif
 
 	return state;
 }

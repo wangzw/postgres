@@ -15,8 +15,8 @@ include $(top_builddir)/src/Makefile.global
 OBJS = execAmi.o execCurrent.o execGrouping.o execIndexing.o execJunk.o \
        execMain.o execParallel.o execProcnode.o execQual.o \
        execScan.o execTuples.o \
-       execUtils.o functions.o instrument.o llvmQual.o nodeAppend.o \
-       nodeAgg.o nodeBitmapAnd.o nodeBitmapOr.o \
+       execUtils.o functions.o instrument.o nodeAppend.o nodeAgg.o \
+       nodeBitmapAnd.o nodeBitmapOr.o \
        nodeBitmapHeapscan.o nodeBitmapIndexscan.o nodeCustom.o nodeGather.o \
        nodeHash.o nodeHashjoin.o nodeIndexscan.o nodeIndexonlyscan.o \
        nodeLimit.o nodeLockRows.o \
@@ -27,11 +27,13 @@ OBJS = execAmi.o execCurrent.o execGrouping.o execIndexing.o execJunk.o \
        nodeGroup.o nodeSubplan.o nodeSubqueryscan.o nodeTidscan.o \
        nodeForeignscan.o nodeWindowAgg.o tstoreReceiver.o tqueue.o spi.o
 
-llvmQual.o: CFLAGS := $(shell llvm-config --cflags) $(CFLAGS)
-llvmQual.o: llvm_backend/llvm_backend_wrapper.h
+ifeq ($(enable_llvm_jit), yes)
+  OBJS += llvmQual.o
+  SUBDIRS += llvm_backend
 
-llvm_backend/llvm_backend_wrapper.h: llvm_backend/objfiles.txt
+  llvmQual.o: llvm_backend/llvm_backend_wrapper.h
 
-SUBDIRS := llvm_backend
+  llvm_backend/llvm_backend_wrapper.h: llvm_backend/objfiles.txt
+endif
 
 include $(top_srcdir)/src/backend/common.mk

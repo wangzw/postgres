@@ -2894,6 +2894,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	aggstate->numaggs = aggno + 1;
 	aggstate->numtrans = transno + 1;
 
+#ifdef LLVM_JIT
 	/*
 	 * compile child expressions
 	 *
@@ -2906,6 +2907,7 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 					aggstate->ss.ps.ps_ExprContext);
 	ExecCompileExpr((ExprState *) aggstate->ss.ps.qual,
 					aggstate->ss.ps.ps_ExprContext);
+#endif
 
 	return aggstate;
 }
