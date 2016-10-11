@@ -328,7 +328,7 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 							  bool retSet, bool hasSetArg)
 {
 
-	LLVMTupleAttr result;
+	LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
 
 	LLVMValueRef isNull_ptr;
 
