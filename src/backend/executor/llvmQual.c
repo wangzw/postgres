@@ -1114,6 +1114,18 @@ GenerateExpr(LLVMBuilderRef builder,
 								&this_bb, 1);
 				LLVMBuildBr(builder, exit_bb);
 				LLVMPositionBuilderAtEnd(builder, exit_bb);
+
+				if (hasSetArg)
+				{
+					for (i = 0; i < fcinfo->nargs; ++i)
+					{
+						LLVMValueRef attr_isDone = LLVMBuildICmp(
+							builder, LLVMIntEQ, attr[i].isDone,
+							LLVMConstInt(LLVMInt32Type(), ExprEndResult, 0), "attr_isDone");
+						result.isDone = LLVMBuildSelect(builder, attr_isDone,
+							result.isDone, attr[i].isDone, "select_isDone");
+					}
+				}
 			}
 			else
 			{
@@ -1418,7 +1430,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (nitems <= 0)
 			{
 				result.isNull = LLVMConstNull(LLVMInt8Type());
-				result.value = LLVMConstInt(LLVMInt8Type(), !useOr, 0);
+				result.value = LLVMConstInt(LLVMInt64Type(), !useOr, 0);
 				return result;
 			}
 
