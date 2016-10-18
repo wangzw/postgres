@@ -4517,26 +4517,26 @@ ExecInitExprNoJIT(Expr *node, PlanState *parent)
 			{
 				AggrefExprState *astate = makeNode(AggrefExprState);
 
-				/*
-				 * If all Aggref nodes (aggstate->aggs) in targetlist & quals have
-				 * already been initialized, then return the corresponding nth element
-				 * from the end of the aggs list.
-				 *
-				 * Note: this case is only occur in ExecInitAgg.
-				 */
-				if (list_length(aggstate->aggs) > aggstate->numaggs)
-				{
-					AggrefExprState *aggrefstate = (AggrefExprState *) list_nth(aggstate->aggs,
-							list_length(aggstate->aggs) - aggstate->numaggs - 1);
-					state = (ExprState *) aggrefstate;
-					aggstate->numaggs++;
-					break;
-				}
-
 				astate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalAggref;
 				if (parent && IsA(parent, AggState))
 				{
 					AggState   *aggstate = (AggState *) parent;
+
+					/*
+					 * If all Aggref nodes (aggstate->aggs) in targetlist & quals have
+					 * already been initialized, then return the corresponding nth element
+					 * from the end of the aggs list.
+					 *
+					 * Note: this case is only occur in ExecInitAgg.
+					 */
+					if (list_length(aggstate->aggs) > aggstate->numaggs)
+					{
+						AggrefExprState *aggrefstate = (AggrefExprState *) list_nth(aggstate->aggs,
+								list_length(aggstate->aggs) - aggstate->numaggs - 1);
+						state = (ExprState *) aggrefstate;
+						aggstate->numaggs++;
+						break;
+					}
 
 					aggstate->aggs = lcons(astate, aggstate->aggs);
 					aggstate->numaggs++;
@@ -5252,36 +5252,21 @@ ExecInitAggref(Expr *node, PlanState *parent)
 	if (nodeTag(node) == T_Aggref)
 	{
 		AggrefExprState *astate = makeNode(AggrefExprState);
-		AggState   *aggstate = (AggState *) parent;
-		Aggref     *aggref = (Aggref *) node;
-		ExprState  *state;
+		ExprState *state;
 
 		astate->xprstate.evalfunc = (ExprStateEvalFunc) ExecEvalAggref;
-		if (!aggstate || !IsA(aggstate, AggState))
+		if (parent && IsA(parent, AggState))
+		{
+			AggState   *aggstate = (AggState *) parent;
+
+			aggstate->aggs = lcons(astate, aggstate->aggs);
+			aggstate->numaggs++;
+		}
+		else
 		{
 			/* planner messed up */
 			elog(ERROR, "Aggref found in non-Agg plan node");
 		}
-		if (aggref->aggpartial == aggstate->finalizeAggs)
-		{
-			/* planner messed up */
-			if (aggref->aggpartial)
-				elog(ERROR, "partial Aggref found in finalize agg plan node");
-			else
-				elog(ERROR, "non-partial Aggref found in non-finalize agg plan node");
-		}
-
-		if (aggref->aggcombine != aggstate->combineStates)
-		{
-			/* planner messed up */
-			if (aggref->aggcombine)
-				elog(ERROR, "combine Aggref found in non-combine agg plan node");
-			else
-				elog(ERROR, "non-combine Aggref found in combine agg plan node");
-		}
-
-		aggstate->aggs = lcons(astate, aggstate->aggs);
-		aggstate->numaggs++;
 		state = (ExprState *) astate;
 		state->expr = node;
 		return false;
