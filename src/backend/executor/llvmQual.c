@@ -13,6 +13,7 @@
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm-c/Transforms/IPO.h>
 #include <llvm-c/Transforms/PassManagerBuilder.h>
+#include <llvm-c/Transforms/Scalar.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -1691,23 +1692,48 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod, LLVMValueRef main)
 	LLVMDisposeMessage(error);
 	error = NULL;
 #else
-	LLVMPassManagerBuilderRef pmbuilder = LLVMPassManagerBuilderCreate();
 	LLVMPassManagerRef pass = LLVMCreatePassManager();
 
 	LLVMAddTargetData(LLVMGetExecutionEngineTargetData(engine), pass);
-
-	LLVMPassManagerBuilderSetOptLevel(pmbuilder, 2);
-	LLVMPassManagerBuilderUseInlinerWithThreshold(pmbuilder, 275);
 
 	Assert(!LLVMGetNamedFunction(mod, "main"));
 	LLVMSetValueName(main, "main");
 	LLVMAddInternalizePass(pass, true);
 
-	LLVMPassManagerBuilderPopulateModulePassManager(pmbuilder, pass);
+	LLVMAddScopedNoAliasAAPass(pass);
+	LLVMAddBasicAliasAnalysisPass(pass);
+	LLVMAddIPSCCPPass(pass);
+	LLVMAddFunctionInliningPass(pass);
+	LLVMAddArgumentPromotionPass(pass);
+	LLVMAddScalarReplAggregatesPass(pass);
+	LLVMAddEarlyCSEPass(pass);
+	LLVMAddCorrelatedValuePropagationPass(pass);
+	LLVMAddTailCallEliminationPass(pass);
+	LLVMAddCFGSimplificationPass(pass);
+	LLVMAddLoopRotatePass(pass);
+	LLVMAddLoopUnswitchPass(pass);
+	LLVMAddInstructionCombiningPass(pass);
+	LLVMAddIndVarSimplifyPass(pass);
+	LLVMAddLoopIdiomPass(pass);
+	LLVMAddLoopDeletionPass(pass);
+	LLVMAddMemCpyOptPass(pass);
+	LLVMAddJumpThreadingPass(pass);
+	LLVMAddCorrelatedValuePropagationPass(pass);
+	LLVMAddDeadArgEliminationPass(pass);
+	LLVMAddLICMPass(pass);
+	LLVMAddCFGSimplificationPass(pass);
+	LLVMAddInstructionCombiningPass(pass);
+	LLVMAddCFGSimplificationPass(pass);
+	LLVMAddInstructionCombiningPass(pass);
+	LLVMAddLoopUnrollPass(pass);
+	LLVMAddInstructionCombiningPass(pass);
+	LLVMAddLICMPass(pass);
+	LLVMAddStripDeadPrototypesPass(pass);
+	LLVMAddConstantPropagationPass(pass);
+	LLVMAddGlobalDCEPass(pass);
 
 	LLVMRunPassManager(pass, mod);
 	LLVMDisposePassManager(pass);
-	LLVMPassManagerBuilderDispose(pmbuilder);
 #endif
 }
 
