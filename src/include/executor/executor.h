@@ -253,8 +253,11 @@ extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo,
 			ExprDoneCond *isDone);
 
 #ifdef LLVM_JIT
-extern bool ExecCompileExpr(ExprState *node, ExprContext *econtext);
+extern bool ExecCompileExprLLVM(ExprState *node, ExprContext *econtext);
+extern bool IsExprSupportedLLVM(Expr *node);
 #endif
+
+bool ExecInitAggref(Expr *node, PlanState *parent);
 
 /*
  * prototypes from functions in execScan.c

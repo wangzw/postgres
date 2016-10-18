@@ -464,10 +464,10 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 }
 
 
-static bool
-IsExprSupported(ExprState *exprstate)
+bool
+IsExprSupportedLLVM(Expr *node)
 {
-	switch (nodeTag(exprstate->expr))
+	switch (nodeTag(node))
 	{
 		case T_Const:
 		case T_RelabelType:
@@ -480,14 +480,17 @@ IsExprSupported(ExprState *exprstate)
 
 		case T_Var:
 		{
-			return IsA(exprstate, ExprState);
+			if (((Var *) node)->varattno == InvalidAttrNumber)
+				return false;
+
+			return true;
 		}
 
 		case T_CaseExpr:
 		{
-			CaseExprState *caseExpr = (CaseExprState *) exprstate;
+			CaseExpr   *caseexpr = (CaseExpr *) node;
 
-			if (caseExpr->arg)
+			if (caseexpr->arg)
 				return false;
 
 			return true;
@@ -495,8 +498,7 @@ IsExprSupported(ExprState *exprstate)
 
 		case T_NullTest:
 		{
-			NullTestState *nstate = (NullTestState *) exprstate;
-			NullTest *ntest = (NullTest *) nstate->xprstate.expr;
+			NullTest *ntest = (NullTest *) node;
 
 			if (ntest->argisrow)
 				return false;
@@ -506,7 +508,7 @@ IsExprSupported(ExprState *exprstate)
 
 		case T_ScalarArrayOpExpr:
 		{
-			ScalarArrayOpExpr *opexpr = (ScalarArrayOpExpr *) exprstate->expr;
+			ScalarArrayOpExpr *opexpr = (ScalarArrayOpExpr *) node;
 
 			if (!IsA(lsecond(opexpr->args), Const))
 				return false;
@@ -827,7 +829,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			 ExprContext *econtext,
 			 RuntimeContext *rtcontext)
 {
-	if (!IsExprSupported(exprstate))
+	if (!IsExprSupportedLLVM(exprstate->expr))
 		return GenerateDefaultExpr(builder, exprstate, rtcontext);
 
 	switch (nodeTag(exprstate->expr))
@@ -1864,13 +1866,13 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 
 
 /*
- * ExecCompileExpr: compile expression with LLVM MCJIT
+ * ExecCompileExprLLVM: compile expression with LLVM MCJIT
  *
  * If compilation is successful, `evalfunc` pointer is changed to point to
  * generated code and `true` is returned.
  */
 bool
-ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
+ExecCompileExprLLVM(ExprState *exprstate, ExprContext *econtext)
 {
 	if (!enable_llvm_jit || !exprstate)
 	{
@@ -1886,7 +1888,7 @@ ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 		{
 			ExprState *exprstate = lfirst(cell);
 
-			changed |= ExecCompileExpr(exprstate, econtext);
+			changed |= ExecCompileExprLLVM(exprstate, econtext);
 		}
 
 		return changed;
@@ -1897,7 +1899,7 @@ ExecCompileExpr(ExprState *exprstate, ExprContext *econtext)
 		exprstate = ((GenericExprState *) exprstate)->arg;
 	}
 
-	if (IsExprSupported(exprstate))
+	if (IsExprSupportedLLVM(exprstate->expr))
 	{
 		ExprStateEvalFunc evalfunc = CompileExpr(exprstate, econtext);
 

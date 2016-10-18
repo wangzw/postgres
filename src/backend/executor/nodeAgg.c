@@ -2403,20 +2403,17 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	aggstate->sort_slot = ExecInitExtraTupleSlot(estate);
 
 	/*
-	 * initialize child expressions
+	 * initialize Aggref expressions
 	 *
-	 * Note: ExecInitExpr finds Aggrefs for us, and also checks that no aggs
+	 * Note: ExecInitAggref finds Aggrefs for us, and also checks that no aggs
 	 * contain other agg calls in their arguments.  This would make no sense
 	 * under SQL semantics anyway (and it's forbidden by the spec). Because
 	 * that is true, we don't need to worry about evaluating the aggs in any
 	 * particular order.
 	 */
-	aggstate->ss.ps.targetlist = (List *)
-		ExecInitExprNoJIT((Expr *) node->plan.targetlist,
-						  (PlanState *) aggstate);
-	aggstate->ss.ps.qual = (List *)
-		ExecInitExprNoJIT((Expr *) node->plan.qual,
-						  (PlanState *) aggstate);
+
+	ExecInitAggref((Expr *) node->plan.targetlist, (PlanState *)aggstate);
+	ExecInitAggref((Expr *) node->plan.qual, (PlanState *)aggstate);
 
 	/*
 	 * Initialize child nodes.
@@ -2436,12 +2433,6 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	if (node->chain)
 		ExecSetSlotDescriptor(aggstate->sort_slot,
 						 aggstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor);
-
-	/*
-	 * Initialize result tuple type and projection info.
-	 */
-	ExecAssignResultTypeFromTL(&aggstate->ss.ps);
-	ExecAssignProjectionInfo(&aggstate->ss.ps, NULL);
 
 	aggstate->ss.ps.ps_TupFromTlist = false;
 
@@ -2888,26 +2879,33 @@ ExecInitAgg(Agg *node, EState *estate, int eflags)
 	}
 
 	/*
+	 * initialize/compile child expressions
+	 *
+	 * Since Aggref expressions already initialized (see ExecInitAggref), we reset
+	 * numaggs value and call ExecInitExpr to initialize child expressions, except
+	 * Aggrefs - we use numaggs as a counter to return the corresponding aggstate.
+	 */
+	aggstate->numaggs = 0;
+
+	aggstate->ss.ps.targetlist = (List *)
+		ExecInitExpr((Expr *) node->plan.targetlist,
+				(PlanState *) aggstate);
+	aggstate->ss.ps.qual = (List *)
+		ExecInitExpr((Expr *) node->plan.qual,
+				(PlanState *) aggstate);
+
+	/*
+	 * Initialize result tuple type and projection info.
+	 */
+	ExecAssignResultTypeFromTL(&aggstate->ss.ps);
+	ExecAssignProjectionInfo(&aggstate->ss.ps, NULL);
+
+	/*
 	 * Update numaggs to match the number of unique aggregates found. Also set
 	 * numstates to the number of unique aggregate states found.
 	 */
 	aggstate->numaggs = aggno + 1;
 	aggstate->numtrans = transno + 1;
-
-#ifdef LLVM_JIT
-	/*
-	 * compile child expressions
-	 *
-	 * This can't be done during ExecInitExpr because it would need
-	 * `ecxt_aggvalues` and aggnos which are initialized later. ExecInitExpr
-	 * can't be moved here because the rest of the function relies on it
-	 * being called early (e.g. in ExecAssignResultTypeFromTL).
-	 */
-	ExecCompileExpr((ExprState *) aggstate->ss.ps.targetlist,
-					aggstate->ss.ps.ps_ExprContext);
-	ExecCompileExpr((ExprState *) aggstate->ss.ps.qual,
-					aggstate->ss.ps.ps_ExprContext);
-#endif
 
 	return aggstate;
 }
