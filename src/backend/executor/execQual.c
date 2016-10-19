@@ -4460,7 +4460,11 @@ ExecInitExprNoJIT(Expr *node, PlanState *parent)
 	if (node == NULL)
 		return NULL;
 
+#ifdef LLVM_JIT
 	ExecInitExprFunc = IsExprSupportedLLVM(node) ? ExecInitExprNoJIT : ExecInitExpr;
+#else
+	ExecInitExprFunc = ExecInitExprNoJIT;
+#endif
 
 	/* Guard against stack overflow due to overly complex expressions */
 	check_stack_depth();
