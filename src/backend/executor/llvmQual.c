@@ -145,9 +145,12 @@ GenerateMemSet(LLVMBuilderRef builder, size_t alignment, LLVMValueRef dest,
 	LLVMValueRef args[5];
 
 	args[0] = LLVMBuildPointerCast(
-		builder, dest, LLVMPointerType(LLVMInt8Type(), 0), "dest");
-	args[1] = LLVMBuildTrunc(builder, val, LLVMInt8Type(), "val");
-	args[2] = LLVMBuildZExt(builder, len, LLVMInt64Type(), "len");
+		builder, dest, LLVMPointerType(LLVMInt8Type(), 0),
+		LLVMGetValueName(dest));
+	args[1] = LLVMBuildTrunc(
+		builder, val, LLVMInt8Type(), LLVMGetValueName(val));
+	args[2] = LLVMBuildZExt(
+		builder, len, LLVMInt64Type(), LLVMGetValueName(len));
 	args[3] = LLVMConstInt(LLVMInt32Type(), alignment, false);
 	args[4] = LLVMConstNull(LLVMInt1Type());
 	LLVMBuildCall(builder, memset_f, args, lengthof(args), "");
@@ -211,7 +214,7 @@ GenerateCallBackendWithTypeCheck(LLVMBuilderRef builder,
 	for (i = 0; i < num_args; i++)
 	{
 		args_fixed[i] = LLVMBuildBitCast(
-			builder, args[i], args_types[i], "arg_bitcast");
+			builder, args[i], args_types[i], LLVMGetValueName(args[i]));
 	}
 
 	/* Cannot assign a name to void values */
@@ -377,15 +380,17 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 		resultinfo_ptr =
 			LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
 		resultinfo_ptr = LLVMBuildBitCast(builder,
-			LLVMBuildLoad(builder, resultinfo_ptr, ""),
-			LLVMPointerType(BackendStructType(ReturnSetInfo), 0), "");
+			LLVMBuildLoad(builder, resultinfo_ptr, "resultinfo"),
+			LLVMPointerType(BackendStructType(ReturnSetInfo), 0),
+			"resultinfo");
 		rsinfo_isDone_ptr =
 			LLVMBuildStructGEP(builder, resultinfo_ptr, 5, "&isDone");
 	}
 
 	LLVMGetParamTypes(LLVMGetElementType(LLVMTypeOf(functionRef)),
 			&fcinfo_type);
-	fcinfo_llvm = LLVMBuildBitCast(builder, fcinfo_llvm, fcinfo_type, "");
+	fcinfo_llvm = LLVMBuildBitCast(builder, fcinfo_llvm, fcinfo_type,
+								   LLVMGetValueName(fcinfo_llvm));
 
 	result.value = LLVMBuildCall(
 		builder, functionRef, &fcinfo_llvm, 1,
@@ -463,7 +468,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 		LLVMGetElementType(LLVMTypeOf(rsinfo_setDesc_ptr)), NULL),
 		rsinfo_setDesc_ptr);
 	rsinfo_ptr = LLVMBuildBitCast(builder, rsinfo_ptr,
-		LLVMGetElementType(LLVMTypeOf(resultinfo_ptr)), "bitcast");
+		LLVMGetElementType(LLVMTypeOf(resultinfo_ptr)), "rsinfo");
 	LLVMBuildStore(builder, rsinfo_ptr, resultinfo_ptr);
 }
 
@@ -991,7 +996,7 @@ GenerateExpr(LLVMBuilderRef builder,
 
 			/* heap_form_tuple */
 			heap_form_tuple_args[0] = LLVMBuildLoad(
-				builder, rstate_tupdesc_ptr, "");
+				builder, rstate_tupdesc_ptr, "rstate_tupdesc");
 			heap_form_tuple_args[1] = values_llvm;
 			heap_form_tuple_args[2] = isNull_llvm;
 			tuple = GenerateCallBackendWithTypeCheck(
@@ -1664,7 +1669,7 @@ isinf_codegen(LLVMModuleRef mod)
 		LLVMConstReal(LLVMDoubleType(), INFINITY), input, "is_plus_inf");
 	right = LLVMBuildFCmp(builder, LLVMRealUEQ,
 		LLVMConstReal(LLVMDoubleType(), -INFINITY), input, "is_minus_inf");
-	ret = LLVMBuildZExt(builder, LLVMBuildOr(builder, left, right, ""),
+	ret = LLVMBuildZExt(builder, LLVMBuildOr(builder, left, right, "isinf"),
 						LLVMInt32Type(), "isinf");
 	LLVMBuildRet(builder, ret);
 
