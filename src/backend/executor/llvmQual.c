@@ -31,7 +31,7 @@ typedef struct LLVMTupleAttr {
 #define INIT_LLVMTUPLEATTR \
 		{LLVMConstNull(LLVMInt64Type()), \
 		LLVMConstNull(LLVMInt8Type()), \
-		LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0)}
+		LLVMConstInt(LLVMInt32Type(), ExprSingleResult, false)}
 
 
 /*
@@ -71,7 +71,8 @@ static LLVMValueRef
 ConstPointer(LLVMTypeRef pointer_type, void *pointer)
 {
 	return LLVMConstIntToPtr(
-		LLVMConstInt(LLVMInt64Type(), (uintptr_t) pointer, 0), pointer_type);
+		LLVMConstInt(LLVMInt64Type(), (uintptr_t) pointer, false),
+		pointer_type);
 }
 
 
@@ -138,7 +139,7 @@ GenerateMemSet(LLVMBuilderRef builder, size_t alignment, LLVMValueRef dest,
 		LLVMInt1Type()  /* <isvolatile> */
 	};
 	LLVMTypeRef memset_type = LLVMFunctionType(
-		LLVMVoidType(), memset_arg_types, lengthof(memset_arg_types), 0);
+		LLVMVoidType(), memset_arg_types, lengthof(memset_arg_types), false);
 	LLVMValueRef memset_f = AddLLVMIntrinsic(
 		builder, "llvm.memset.p0i8.i64", memset_type);
 	LLVMValueRef args[5];
@@ -147,7 +148,7 @@ GenerateMemSet(LLVMBuilderRef builder, size_t alignment, LLVMValueRef dest,
 		builder, dest, LLVMPointerType(LLVMInt8Type(), 0), "dest");
 	args[1] = LLVMBuildTrunc(builder, val, LLVMInt8Type(), "val");
 	args[2] = LLVMBuildZExt(builder, len, LLVMInt64Type(), "len");
-	args[3] = LLVMConstInt(LLVMInt32Type(), alignment, 0);
+	args[3] = LLVMConstInt(LLVMInt32Type(), alignment, false);
 	args[4] = LLVMConstNull(LLVMInt1Type());
 	LLVMBuildCall(builder, memset_f, args, lengthof(args), "");
 }
@@ -176,7 +177,7 @@ ExprStateEvalFuncType(void)
 		LLVMPointerType(LLVMInt32Type(), 0)
 	};
 	LLVMTypeRef function_type = LLVMFunctionType(
-		LLVMInt64Type(), arg_types, lengthof(arg_types), 0);
+		LLVMInt64Type(), arg_types, lengthof(arg_types), false);
 
 	StaticAssertStmt(sizeof(bool) == sizeof(int8), "bool is 8-bit");
 	StaticAssertStmt(sizeof(ExprDoneCond) == sizeof(int32),
@@ -250,9 +251,9 @@ GenerateInitFCInfo(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 					   fcinfo->resultinfo),
 				   resultinfo_ptr);
 	LLVMBuildStore(builder, LLVMConstInt(
-			LLVMInt32Type(), fcinfo->fncollation, 0), fncollation_ptr);
+			LLVMInt32Type(), fcinfo->fncollation, false), fncollation_ptr);
 	LLVMBuildStore(builder, LLVMConstInt(
-			LLVMInt16Type(), fcinfo->nargs, 0), nargs_ptr);
+			LLVMInt16Type(), fcinfo->nargs, false), nargs_ptr);
 
 	/*
 	 * Zero-initialize `argnull`.
@@ -262,7 +263,7 @@ GenerateInitFCInfo(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	argnulls = LLVMBuildStructGEP(builder, argnulls, 0, "argnull_ptr");
 	GenerateMemSet(builder, 1, argnulls,
 				   LLVMConstNull(LLVMInt8Type()),
-				   LLVMConstInt(LLVMInt32Type(), fcinfo->nargs, 0));
+				   LLVMConstInt(LLVMInt32Type(), fcinfo->nargs, false));
 
 	return fcinfo_llvm;
 }
@@ -306,7 +307,7 @@ define_llvm_pg_function(LLVMBuilderRef builder, FmgrInfo *flinfo)
 		fcinfo_type = BackendStructType(FunctionCallInfoData);
 		fcinfo_type = LLVMPointerType(fcinfo_type, 0);
 		function_type_llvm = LLVMFunctionType(
-				LLVMInt64Type(), &fcinfo_type, 1, 0);
+				LLVMInt64Type(), &fcinfo_type, 1, false);
 
 		snprintf(func_name, sizeof(func_name), "%d", flinfo->fn_oid);
 
@@ -400,14 +401,15 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 			{
 				LLVMValueRef attr_isDone = LLVMBuildICmp(
 						builder, LLVMIntEQ, attr[arg_index].isDone,
-						LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0), "attr_isDone");
+						LLVMConstInt(LLVMInt32Type(), ExprSingleResult, false),
+						"attr_isDone");
 				result.isDone = LLVMBuildSelect(builder, attr_isDone,
 						result.isDone, attr[arg_index].isDone, "select_isDone");
 			}
 		}
 		else
 			result.isDone = LLVMConstInt(
-					LLVMInt32Type(), ExprSingleResult, 0);
+					LLVMInt32Type(), ExprSingleResult, false);
 
 	return result;
 }
@@ -440,7 +442,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 		LLVMBuildStructGEP(builder, rsinfo_ptr, 7, "&rsinfo->setDesc");
 
 	LLVMBuildStore(builder, LLVMConstInt(
-		LLVMInt32Type(), T_ReturnSetInfo, 0), rsinfo_type_ptr);
+		LLVMInt32Type(), T_ReturnSetInfo, false), rsinfo_type_ptr);
 	LLVMBuildStore(builder, ConstPointer(
 		LLVMGetElementType(LLVMTypeOf(rsinfo_econtext_ptr)), econtext),
 		rsinfo_econtext_ptr);
@@ -448,12 +450,12 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 		LLVMGetElementType(LLVMTypeOf(rsinfo_expectedDesc_ptr)),
 		expectedDesc), rsinfo_expectedDesc_ptr);
 	LLVMBuildStore(builder, LLVMConstInt(
-		LLVMInt32Type(), (int) (SFRM_ValuePerCall | SFRM_Materialize), 0),
+		LLVMInt32Type(), (int) (SFRM_ValuePerCall | SFRM_Materialize), false),
 		rsinfo_allowedModes_ptr);
 	LLVMBuildStore(builder, LLVMConstInt(
-		LLVMInt32Type(), SFRM_ValuePerCall, 0), rsinfo_returnMode_ptr);
+		LLVMInt32Type(), SFRM_ValuePerCall, false), rsinfo_returnMode_ptr);
 	LLVMBuildStore(builder, LLVMConstInt(
-				LLVMInt32Type(), ExprSingleResult, 0), rsinfo_isDone_ptr);
+				LLVMInt32Type(), ExprSingleResult, false), rsinfo_isDone_ptr);
 	LLVMBuildStore(builder, ConstPointer(
 		LLVMGetElementType(LLVMTypeOf(rsinfo_setResult_ptr)), NULL),
 		rsinfo_setResult_ptr);
@@ -647,7 +649,7 @@ GetSomeAttrs(LLVMBuilderRef builder, LLVMValueRef slot, int attnum)
 {
 	LLVMValueRef args[] = {
 		slot,
-		LLVMConstInt(LLVMInt32Type(), attnum, 0)
+		LLVMConstInt(LLVMInt32Type(), attnum, false)
 	};
 
 	GenerateCallBackendWithTypeCheck(
@@ -818,7 +820,7 @@ GetSysAttr(LLVMBuilderRef builder, LLVMValueRef tuple, AttrNumber attno,
 {
 	LLVMValueRef args[] = {
 		tuple,
-		LLVMConstInt(LLVMInt32Type(), attno, 1),
+		LLVMConstInt(LLVMInt32Type(), attno, true),
 		tupleDesc,
 		isNull
 	};
@@ -844,10 +846,11 @@ GenerateExpr(LLVMBuilderRef builder,
 			Const  *con = (Const *) exprstate->expr;
 			LLVMTupleAttr attr = INIT_LLVMTUPLEATTR;
 
-			attr.isNull = LLVMConstInt(LLVMInt8Type(), con->constisnull, 0);
+			attr.isNull = LLVMConstInt(
+				LLVMInt8Type(), con->constisnull, false);
 			attr.value = con->constisnull
 				? LLVMConstNull(LLVMInt64Type())
-				: LLVMConstInt(LLVMInt64Type(), con->constvalue, 0);
+				: LLVMConstInt(LLVMInt64Type(), con->constvalue, false);
 			return attr;
 		}
 
@@ -884,7 +887,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (attno > 0)
 			{
 				LLVMValueRef varIndex = LLVMConstInt(
-					LLVMInt32Type(), attno - 1, 0);
+					LLVMInt32Type(), attno - 1, false);
 
 				Assert(slotValues && slotIsNull);
 
@@ -951,7 +954,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			/* preset to nulls in case rowtype has some later-added columns */
 			for (i = 0; i < natts; i++)
 			{
-				list[i] = LLVMConstInt(LLVMInt8Type(), 1, 0);
+				list[i] = LLVMConstInt(LLVMInt8Type(), 1, false);
 			}
 
 			LLVMSetInitializer(values_llvm,
@@ -969,8 +972,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				ExprState  *argstate = (ExprState *) lfirst(arg);
 				LLVMValueRef value, null;
 				LLVMValueRef index[] = {
-					LLVMConstInt(LLVMInt32Type(), 0, 0),
-					LLVMConstInt(LLVMInt32Type(), i, 0)
+					LLVMConstInt(LLVMInt32Type(), 0, false),
+					LLVMConstInt(LLVMInt32Type(), i, false)
 				};
 
 				attr[i] = GenerateExpr(
@@ -999,7 +1002,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			t_data = LLVMBuildLoad(builder, t_data, "t_data");
 			result.value = GenerateCallBackendWithTypeCheck(
 				builder, define_HeapTupleHeaderGetDatum, &t_data, 1);
-			result.isNull = LLVMConstInt(LLVMInt8Type(), 0, 0);
+			result.isNull = LLVMConstInt(LLVMInt8Type(), 0, false);
 
 			return result;
 		}
@@ -1077,9 +1080,9 @@ GenerateExpr(LLVMBuilderRef builder,
 						function, "FuncExpr_next");
 					LLVMValueRef null_llvm = LLVMConstNull(LLVMInt64Type());
 					LLVMValueRef true_llvm = LLVMConstInt(
-							LLVMInt8Type(), 1, 0);
+							LLVMInt8Type(), 1, false);
 					LLVMValueRef single_llvm = LLVMConstInt(
-							LLVMInt32Type(), ExprSingleResult, 0);
+							LLVMInt32Type(), ExprSingleResult, false);
 					LLVMValueRef isNull;
 
 					this_bb = LLVMGetInsertBlock(builder);
@@ -1128,7 +1131,8 @@ GenerateExpr(LLVMBuilderRef builder,
 					{
 						LLVMValueRef attr_isDone = LLVMBuildICmp(
 							builder, LLVMIntEQ, attr[i].isDone,
-							LLVMConstInt(LLVMInt32Type(), ExprEndResult, 0), "attr_isDone");
+							LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
+							"attr_isDone");
 						result.isDone = LLVMBuildSelect(builder, attr_isDone,
 							result.isDone, attr[i].isDone, "select_isDone");
 					}
@@ -1317,8 +1321,10 @@ GenerateExpr(LLVMBuilderRef builder,
 			else
 			{
 				LLVMBasicBlockRef current_bb = LLVMGetInsertBlock(builder);
-				LLVMValueRef llvm_null = LLVMConstInt(LLVMInt64Type(), 0, 0);
-				LLVMValueRef llvm_true = LLVMConstInt(LLVMInt8Type(), 1, 0);
+				LLVMValueRef llvm_null = LLVMConstInt(
+					LLVMInt64Type(), 0, false);
+				LLVMValueRef llvm_true = LLVMConstInt(
+					LLVMInt8Type(), 1, false);
 
 				LLVMAddIncoming(result.value, &llvm_null, &current_bb, 1);
 				LLVMAddIncoming(result.isNull, &llvm_true, &current_bb, 1);
@@ -1404,15 +1410,15 @@ GenerateExpr(LLVMBuilderRef builder,
 
 			LLVMTupleAttr null = {
 				LLVMConstNull(LLVMInt64Type()),
-				LLVMConstInt(LLVMInt8Type(), 1, 0),
-				LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0)
+				LLVMConstInt(LLVMInt8Type(), 1, false),
+				LLVMConstInt(LLVMInt32Type(), ExprSingleResult, false)
 			};
 			LLVMTupleAttr early_result = {
-				LLVMConstInt(LLVMInt64Type(), useOr, 0),
+				LLVMConstInt(LLVMInt64Type(), useOr, false),
 				LLVMConstNull(LLVMInt8Type())
 			};
 			LLVMTupleAttr late_result = {
-				LLVMConstInt(LLVMInt64Type(), !useOr, 0),
+				LLVMConstInt(LLVMInt64Type(), !useOr, false),
 				LLVMConstNull(LLVMInt8Type())
 			};
 			LLVMValueRef any_null;
@@ -1437,7 +1443,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			if (nitems <= 0)
 			{
 				result.isNull = LLVMConstNull(LLVMInt8Type());
-				result.value = LLVMConstInt(LLVMInt64Type(), !useOr, 0);
+				result.value = LLVMConstInt(LLVMInt64Type(), !useOr, false);
 				return result;
 			}
 
@@ -1538,9 +1544,9 @@ GenerateExpr(LLVMBuilderRef builder,
 					Assert(fcinfo->nargs == 2);
 
 					attr[1].value = LLVMConstInt(
-						LLVMInt64Type(), elt_datum, 0);
+						LLVMInt64Type(), elt_datum, false);
 					attr[1].isNull = LLVMConstInt(
-						LLVMInt8Type(), elt_isNull, 0);
+						LLVMInt8Type(), elt_isNull, false);
 
 					fcinfo_llvm = GenerateInitFCInfo(
 						builder, fcinfo, rtcontext->fcinfo);
@@ -1645,7 +1651,7 @@ isinf_codegen(LLVMModuleRef mod)
 		LLVMDoubleType()
 	};
 	LLVMTypeRef isinf_type = LLVMFunctionType(
-		LLVMInt32Type(), isinf_arg_types, 1, 0);
+		LLVMInt32Type(), isinf_arg_types, 1, false);
 	LLVMValueRef isinf_f = LLVMAddFunction(
 		mod, "__isinf", isinf_type);
 
