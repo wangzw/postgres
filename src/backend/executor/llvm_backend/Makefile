@@ -29,7 +29,7 @@ LLC := llc
 LLVM_FLAGS  := $(shell llvm-config --libs --ldflags --system-libs all)
 CXXFLAGS := $(shell llvm-config --cxxflags)
 OPT_OPTIONS := -O3
-CLANG_OPTS := $(shell pg_config --cflags) -g0 \
+CLANG_OPTS := $(CFLAGS) -g0 \
 	-Wno-invalid-command-line-argument \
 	-Wno-unused-command-line-argument \
 	-Wno-ignored-attributes \
