@@ -477,6 +477,9 @@ IsExprSupportedLLVM(Expr *node)
 		case T_FuncExpr:
 		case T_Aggref:
 		case T_BoolExpr:
+		case T_BooleanTest:
+		case T_TargetEntry:
+		case T_List:
 			return true;
 
 		case T_Var:
