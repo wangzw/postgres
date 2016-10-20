@@ -904,13 +904,22 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 	{
-		{"enable_llvm_dump", PGC_USERSET, QUERY_TUNING_OTHER,
+		{"enable_llvm_dump", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Dumps compiled LLVM IR."),
 			NULL
 		},
 		&enable_llvm_dump,
 		false,
 		NULL, &assign_enable_llvm_dump, NULL
+	},
+	{
+		{"debug_llvm_jit", PGC_USERSET, DEVELOPER_OPTIONS,
+		 gettext_noop("Disables optimization of generated LLVM modules."),
+			NULL
+		},
+		&debug_llvm_jit,
+		false,
+		NULL, NULL, NULL
 	},
 #endif
 

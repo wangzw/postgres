@@ -1841,6 +1841,7 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 	LLVMTargetDataRef target_data = LLVMGetExecutionEngineTargetData(engine);
 
 	LLVMSetDataLayout(mod, LLVMCopyStringRepOfTargetData(target_data));
+	LLVMSetFunctionCallConv(ExecExpr_f, LLVMCCallConv);
 
 	LLVMPositionBuilderAtEnd(builder, entry_bb);
 
@@ -1892,8 +1893,10 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		DumpModule(mod, "dump.%03u.ll");
 	}
 
-	LLVMSetFunctionCallConv(ExecExpr_f, LLVMCCallConv);
-	RunPasses(engine, mod, ExecExpr_f);
+	if (!debug_llvm_jit)
+	{
+		RunPasses(engine, mod, ExecExpr_f);
+	}
 
 	if (enable_llvm_dump)
 	{
