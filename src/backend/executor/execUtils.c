@@ -144,10 +144,21 @@ CreateExecutorState(void)
 	estate->es_epqTupleSet = NULL;
 	estate->es_epqScanDone = NULL;
 
-#ifdef LLVM_JIT
 	/*
-	 * Create LLVM Executor Engine.
+	 * Return the executor state structure
 	 */
+	MemoryContextSwitchTo(oldcontext);
+
+	return estate;
+}
+
+#ifdef LLVM_JIT
+/*
+ * Create and initialize LLVM Execution Engine
+ */
+void
+CreateLLVMExecutionEngine(EState *estate)
+{
 	if (enable_llvm_jit)
 	{
 		struct LLVMMCJITCompilerOptions options;
@@ -160,22 +171,15 @@ CreateExecutorState(void)
 					init_module, &options,
 					sizeof(options), &error_msg) != 0)
 		{
-			elog(ERROR, "%s", error_msg);
+			elog(ERROR, "LLVM: %s", error_msg);
 			LLVMDisposeMessage(error_msg);
 		}
 
 		LLVMRemoveModule(estate->es_engine, init_module, &init_module, NULL);
 		LLVMDisposeModule(init_module);
 	}
-#endif
-
-	/*
-	 * Return the executor state structure
-	 */
-	MemoryContextSwitchTo(oldcontext);
-
-	return estate;
 }
+#endif
 
 /* ----------------
  *		FreeExecutorState

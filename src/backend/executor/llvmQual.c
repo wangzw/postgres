@@ -1900,7 +1900,7 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 bool
 ExecCompileExprLLVM(ExprState *exprstate, ExprContext *econtext)
 {
-	if (!enable_llvm_jit || !exprstate)
+	if (!enable_llvm_jit || !exprstate || !econtext->ecxt_estate->es_engine)
 	{
 		return false;
 	}

@@ -173,6 +173,12 @@ standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 	 * Build EState, switch into per-query memory context for startup.
 	 */
 	estate = CreateExecutorState();
+
+#ifdef LLVM_JIT
+	if (!(eflags & EXEC_FLAG_NO_JIT))
+		CreateLLVMExecutionEngine(estate);
+#endif
+
 	queryDesc->estate = estate;
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);

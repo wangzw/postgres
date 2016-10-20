@@ -822,6 +822,9 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 			eflags = EXEC_FLAG_SKIP_TRIGGERS;
 		else
 			eflags = 0;			/* default run-to-completion flags */
+#ifdef LLVM_JIT
+		eflags = eflags | EXEC_FLAG_NO_JIT;
+#endif
 		ExecutorStart(es->qd, eflags);
 	}
 

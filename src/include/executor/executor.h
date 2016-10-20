@@ -62,6 +62,9 @@
 #define EXEC_FLAG_WITH_OIDS		0x0020	/* force OIDs in returned tuples */
 #define EXEC_FLAG_WITHOUT_OIDS	0x0040	/* force no OIDs in returned tuples */
 #define EXEC_FLAG_WITH_NO_DATA	0x0080	/* rel scannability doesn't matter */
+#ifdef LLVM_JIT
+#define EXEC_FLAG_NO_JIT		0x0100	/* do not create LLVM ExecutionEngine */
+#endif
 
 
 /*
@@ -317,6 +320,9 @@ extern void end_tup_output(TupOutputState *tstate);
  * prototypes from functions in execUtils.c
  */
 extern EState *CreateExecutorState(void);
+#ifdef LLVM_JIT
+extern void CreateLLVMExecutionEngine(EState *estate);
+#endif
 extern void FreeExecutorState(EState *estate);
 extern ExprContext *CreateExprContext(EState *estate);
 extern ExprContext *CreateStandaloneExprContext(void);
