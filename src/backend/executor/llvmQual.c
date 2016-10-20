@@ -9,6 +9,7 @@
 #include "utils/array.h"
 #include "utils/lsyscache.h"
 
+#include <llvm-c/Analysis.h>
 #include <llvm-c/Core.h>
 #include <llvm-c/ExecutionEngine.h>
 #include <llvm-c/Transforms/IPO.h>
@@ -1683,18 +1684,33 @@ InitModule(const char *module_name)
 
 
 /*
+ * VerifyModule: verify generated LLVM module
+ *
+ * Returns true if the module is valid, false otherwise.
+ */
+static bool PG_USED_FOR_ASSERTS_ONLY
+VerifyModule(LLVMModuleRef mod)
+{
+	char *message;
+
+	if (LLVMVerifyModule(mod, LLVMReturnStatusAction, &message))
+	{
+		ereport(LOG, (errmsg("Broken LLVM module"),
+					  errdetail("%s", message)));
+		LLVMDisposeMessage(message);
+		return false;
+	}
+
+	return true;
+}
+
+
+/*
  * RunPasses: optimize generated module.
  */
 static void
 RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod, LLVMValueRef main)
 {
-#ifdef LLVM_DEBUG
-	char *error = NULL;
-	LLVMVerifyModule(mod, LLVMAbortProcessAction, &error);
-	/* Handler == LLVMAbortProcessAction -> No need to check errors */
-	LLVMDisposeMessage(error);
-	error = NULL;
-#else
 	LLVMPassManagerRef pass = LLVMCreatePassManager();
 
 	LLVMAddTargetData(LLVMGetExecutionEngineTargetData(engine), pass);
@@ -1737,7 +1753,6 @@ RunPasses(LLVMExecutionEngineRef engine, LLVMModuleRef mod, LLVMValueRef main)
 
 	LLVMRunPassManager(pass, mod);
 	LLVMDisposePassManager(pass);
-#endif
 }
 
 
@@ -1827,11 +1842,6 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 
 	LLVMSetDataLayout(mod, LLVMCopyStringRepOfTargetData(target_data));
 
-	if (enable_llvm_dump)
-	{
-		DumpExpression(exprstate->expr, "expr.%03u");
-	}
-
 	LLVMPositionBuilderAtEnd(builder, entry_bb);
 
 	{
@@ -1867,8 +1877,18 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		pfree(rtcontext);
 	}
 
+#ifdef USE_ASSERT_CHECKING
+	if (!VerifyModule(mod))
+	{
+		LLVMDisposeBuilder(builder);
+		LLVMDisposeModule(mod);
+		return NULL;
+	}
+#endif
+
 	if (enable_llvm_dump)
 	{
+		DumpExpression(exprstate->expr, "expr.%03u");
 		DumpModule(mod, "dump.%03u.ll");
 	}
 
