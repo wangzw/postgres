@@ -1962,6 +1962,9 @@ ExecCompileExprLLVM(ExprState *exprstate, ExprContext *econtext)
 		exprstate = ((GenericExprState *) exprstate)->arg;
 	}
 
+	if (IsA(exprstate->expr, Var))
+		return false;
+
 	if (IsExprSupportedLLVM(exprstate->expr))
 	{
 		ExprStateEvalFunc evalfunc = CompileExpr(exprstate, econtext);
