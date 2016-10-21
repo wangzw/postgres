@@ -556,6 +556,8 @@ PGAC_ARG_BOOL(enable, llvm-jit, no, [turn on llvm jit],
                          [Define to 1 to build with LLVM JIT. (--enable-llvm-jit)])])
 AC_SUBST(enable_llvm_jit)
 
+PGAC_ARG_REQ(with, llvm-config, [PATH], [how to run llvm-config])
+
 
 #
 # Automatic dependency tracking
@@ -571,11 +573,6 @@ AC_SUBST(autodepend)
 PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
               [AC_DEFINE([USE_ASSERT_CHECKING], 1,
                          [Define to 1 to build with assertion checks. (--enable-cassert)])])
-
-
-if test "$enable_llvm_jit" = yes ; then
-  CFLAGS="$(llvm-config --cflags) $CFLAGS"
-fi
 
 
 #
@@ -2040,6 +2037,32 @@ Use --without-tcl to disable building PL/Tcl.])
     CPPFLAGS="$TCL_INCLUDE_SPEC $CPPFLAGS"
     AC_CHECK_HEADER(tcl.h, [], [AC_MSG_ERROR([header file <tcl.h> is required for Tcl])])
     CPPFLAGS=$ac_save_CPPFLAGS
+fi
+
+# Add llvm-config cflags
+if test "$enable_llvm_jit" = yes ; then
+  llvm_config="llvm-config"
+  if test "x$with_llvm_config" != "x"; then
+    llvm_config=$with_llvm_config
+  fi
+
+  AC_MSG_CHECKING([for llvm version])
+  LLVM_VERSION=`$llvm_config --version | egrep -o '^[[0-9.]]+'`
+  LLVM_INCLUDEDIR=`$llvm_config --includedir`
+  AC_COMPUTE_INT([LLVM_VERSION_MAJOR], [LLVM_VERSION_MAJOR],
+  [#include "${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h"])
+  AC_COMPUTE_INT([LLVM_VERSION_MINOR], [LLVM_VERSION_MINOR],
+  [#include "${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h"])
+  AC_COMPUTE_INT([LLVM_VERSION_PATCH], [LLVM_VERSION_PATCH],
+  [#include "${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h"])
+  if test "$LLVM_VERSION_MAJOR" -ne "3" || test "$LLVM_VERSION_MINOR" -ne "7" || test "$LLVM_VERSION_PATCH" -ne "1"; then
+    AC_MSG_RESULT([$LLVM_VERSION bad])
+    AC_MSG_ERROR([special patched LLVM 3.7.1 required])
+  fi
+
+  AC_MSG_RESULT([$LLVM_VERSION ok])
+  CFLAGS="$($llvm_config --cflags) $CFLAGS"
+  AC_SUBST(llvm_config)
 fi
 
 # check for <perl.h>

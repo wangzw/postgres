@@ -12,7 +12,7 @@ subdir = src/backend/executor/llvm_backend/passes
 top_builddir = ../../../../..
 include $(top_builddir)/src/Makefile.global
 
-CXXFLAGS := $(shell llvm-config --cxxflags)
+CXXFLAGS := $(shell $(llvm_config) --cxxflags)
 OBJS = prune_static_vars.o prune_static_vars.so
 
 include $(top_srcdir)/src/backend/common.mk

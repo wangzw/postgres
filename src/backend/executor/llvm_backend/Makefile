@@ -23,11 +23,12 @@ ifeq ($(CLANG),)
  endif
 endif
 
-OPT := opt
-LLVM_LINK := llvm-link
-LLC := llc
-LLVM_FLAGS  := $(shell llvm-config --libs --ldflags --system-libs all)
-CXXFLAGS := $(shell llvm-config --cxxflags)
+BINDIR := $(shell $(llvm_config) --bindir)
+OPT := $(BINDIR)/opt
+LLVM_LINK := $(BINDIR)/llvm-link
+LLC := $(BINDIR)/llc
+LLVM_FLAGS  := $(shell $(llvm_config) --libs --ldflags --system-libs all)
+CXXFLAGS := $(shell $(llvm_config) --cxxflags)
 OPT_OPTIONS := -O3
 CLANG_OPTS := $(CFLAGS) -g0 \
 	-Wno-invalid-command-line-argument \

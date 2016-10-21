@@ -638,6 +638,7 @@ DOCBOOKSTYLE
 have_docbook
 JADE
 NSGMLS
+llvm_config
 TCL_SHLIB_LD_LIBS
 TCL_SHARED_BUILD
 TCL_LIB_SPEC
@@ -819,6 +820,7 @@ with_wal_blocksize
 with_wal_segsize
 with_CC
 enable_llvm_jit
+with_llvm_config
 enable_depend
 enable_cassert
 enable_thread_safety
@@ -1512,6 +1514,7 @@ Optional Packages:
   --with-wal-segsize=SEGSIZE
                           set WAL segment size in MB [16]
   --with-CC=CMD           set compiler (deprecated)
+  --with-llvm-config=PATH how to run llvm-config
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
@@ -5243,6 +5246,28 @@ fi
 
 
 
+
+
+# Check whether --with-llvm-config was given.
+if test "${with_llvm_config+set}" = set; then :
+  withval=$with_llvm_config;
+  case $withval in
+    yes)
+      as_fn_error $? "argument required for --with-llvm-config option" "$LINENO" 5
+      ;;
+    no)
+      as_fn_error $? "argument required for --with-llvm-config option" "$LINENO" 5
+      ;;
+    *)
+
+      ;;
+  esac
+
+fi
+
+
+
+
 #
 # Automatic dependency tracking
 #
@@ -5300,11 +5325,6 @@ else
 fi
 
 
-
-
-if test "$enable_llvm_jit" = yes ; then
-  CFLAGS="$(llvm-config --cflags) $CFLAGS"
-fi
 
 
 #
@@ -15232,6 +15252,41 @@ fi
 
 
     CPPFLAGS=$ac_save_CPPFLAGS
+fi
+
+# Add llvm-config cflags
+if test "$enable_llvm_jit" = yes ; then
+  llvm_config="llvm-config"
+  if test "x$with_llvm_config" != "x"; then
+    llvm_config=$with_llvm_config
+  fi
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for llvm version" >&5
+$as_echo_n "checking for llvm version... " >&6; }
+  LLVM_VERSION=`$llvm_config --version | egrep -o '^[0-9.]+'`
+  LLVM_INCLUDEDIR=`$llvm_config --includedir`
+  if ac_fn_c_compute_int "$LINENO" "LLVM_VERSION_MAJOR" "LLVM_VERSION_MAJOR"        "#include \"${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h\""; then :
+
+fi
+
+  if ac_fn_c_compute_int "$LINENO" "LLVM_VERSION_MINOR" "LLVM_VERSION_MINOR"        "#include \"${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h\""; then :
+
+fi
+
+  if ac_fn_c_compute_int "$LINENO" "LLVM_VERSION_PATCH" "LLVM_VERSION_PATCH"        "#include \"${LLVM_INCLUDEDIR}/llvm/Config/llvm-config.h\""; then :
+
+fi
+
+  if test "$LLVM_VERSION_MAJOR" -ne "3" || test "$LLVM_VERSION_MINOR" -ne "7" || test "$LLVM_VERSION_PATCH" -ne "1"; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION bad" >&5
+$as_echo "$LLVM_VERSION bad" >&6; }
+    as_fn_error $? "special patched LLVM 3.7.1 required" "$LINENO" 5
+  fi
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
+$as_echo "$LLVM_VERSION ok" >&6; }
+  CFLAGS="$($llvm_config --cflags) $CFLAGS"
+
 fi
 
 # check for <perl.h>
