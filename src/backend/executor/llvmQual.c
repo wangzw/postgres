@@ -1,3 +1,41 @@
+/*-------------------------------------------------------------------------
+ *
+ * llvmQual.c
+ *	  Just-in-time compiler for expressions
+ *
+ * Copyright (c) 2016, Institute for System Programming of the Russian Academy of Sciences
+ *
+ *
+ * IDENTIFICATION
+ *	  src/backend/executor/llvmQual.c
+ *
+ *-------------------------------------------------------------------------
+ */
+/*
+ *	 INTERFACE ROUTINES
+ *		ExecCompileExprLLVM - compile expression with LLVM JIT
+ *		IsExprSupportedLLVM - check if expression is supported by LLVM JIT
+ *
+ *	 NOTES
+ *		ExecCompileExprLLVM traverses expression tree it is called to generate
+ *		code for and generates optimized code for each supported node (see
+ *		GenerateExpr routine) during a depth-first traversal. Unsupported
+ *		nodes are handled by the base case, which consists in generating
+ *		calls to corresponding `evalfunc` functions.
+ *
+ *		For this reason, IsExprSupportedLLVM checks only the top-level node of
+ *		an expression, meaning that any expression tree is supported as long
+ *		as its root node is supported. However, some nodes are deliberately
+ *		marked as not supported in IsExprSupportedLLVM although they
+ *		technically are. One (and only, so far) example of such a node is Var:
+ *		expressions consisting of just a single Var are not worth
+ *		the compiling effort.
+ *
+ *		If compilation succeeds, top-level `evalfunc` pointer is swapped
+ *		to point to generated code, which effectively means that it will be
+ *		called whenever ExecEvalExpr is called on the expression.
+ */
+
 #include "postgres.h"
 
 #include "llvm_backend/llvm_backend_wrapper.h"
