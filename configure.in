@@ -551,7 +551,7 @@ AC_SUBST(TAS)
 #
 # LLVM JIT
 #
-PGAC_ARG_BOOL(enable, llvm-jit, no, [turn on llvm jit],
+PGAC_ARG_BOOL(enable, llvm-jit, yes, [turn off llvm jit],
               [AC_DEFINE([LLVM_JIT], 1,
                          [Define to 1 to build with LLVM JIT. (--enable-llvm-jit)])])
 AC_SUBST(enable_llvm_jit)

@@ -150,10 +150,7 @@ static int	syslog_facility = LOG_LOCAL0;
 static int	syslog_facility = 0;
 #endif
 
-#ifdef LLVM_JIT
 static void assign_enable_llvm_dump(bool newval, void *extra);
-#endif
-
 static void assign_syslog_facility(int newval, void *extra);
 static void assign_syslog_ident(const char *newval, void *extra);
 static void assign_session_replication_role(int newval, void *extra);
@@ -893,16 +890,16 @@ static struct config_bool ConfigureNamesBool[] =
 		NULL, NULL, NULL
 	},
 
-#ifdef LLVM_JIT
 	{
 		{"enable_llvm_jit", PGC_USERSET, QUERY_TUNING_OTHER,
 			gettext_noop("Enables llvm jit of expressions."),
 			NULL
 		},
 		&enable_llvm_jit,
-		false,
+		true,
 		NULL, NULL, NULL
 	},
+
 	{
 		{"enable_llvm_dump", PGC_USERSET, DEVELOPER_OPTIONS,
 			gettext_noop("Dumps compiled LLVM IR."),
@@ -912,6 +909,7 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, &assign_enable_llvm_dump, NULL
 	},
+
 	{
 		{"debug_llvm_jit", PGC_USERSET, DEVELOPER_OPTIONS,
 		 gettext_noop("Disables optimization of generated LLVM modules."),
@@ -921,7 +919,6 @@ static struct config_bool ConfigureNamesBool[] =
 		false,
 		NULL, NULL, NULL
 	},
-#endif
 
 	{
 		/* Not for general use --- used by SET SESSION AUTHORIZATION */
@@ -9946,7 +9943,6 @@ assign_log_destination(const char *newval, void *extra)
 	Log_destination = *((int *) extra);
 }
 
-#ifdef LLVM_JIT
 static void
 assign_enable_llvm_dump(bool newval, void *extra)
 {
@@ -9955,7 +9951,6 @@ assign_enable_llvm_dump(bool newval, void *extra)
 		mkdir("llvm_dump", 0770);
 	}
 }
-#endif
 
 static void
 assign_syslog_facility(int newval, void *extra)

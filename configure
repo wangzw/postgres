@@ -1488,7 +1488,7 @@ Optional Features:
   --enable-coverage       build with coverage testing instrumentation
   --enable-dtrace         build with DTrace support
   --enable-tap-tests      enable TAP tests (requires Perl and IPC::Run)
-  --enable-llvm-jit       turn on llvm jit
+  --disable-llvm-jit      turn off llvm jit
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --disable-thread-safety disable thread-safety in client libraries
@@ -5238,7 +5238,9 @@ $as_echo "#define LLVM_JIT 1" >>confdefs.h
   esac
 
 else
-  enable_llvm_jit=no
+  enable_llvm_jit=yes
+
+$as_echo "#define LLVM_JIT 1" >>confdefs.h
 
 fi
 

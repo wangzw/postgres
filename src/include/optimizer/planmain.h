@@ -30,11 +30,9 @@ typedef enum
 extern double cursor_tuple_fraction;
 extern int	force_parallel_mode;
 
-#ifdef LLVM_JIT
 extern bool enable_llvm_jit;
 extern bool enable_llvm_dump;
 extern bool debug_llvm_jit;
-#endif
 
 /* query_planner callback to compute query_pathkeys */
 typedef void (*query_pathkeys_callback) (PlannerInfo *root, void *extra);

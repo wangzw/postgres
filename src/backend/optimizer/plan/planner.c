@@ -60,11 +60,9 @@
 double		cursor_tuple_fraction = DEFAULT_CURSOR_TUPLE_FRACTION;
 int			force_parallel_mode = FORCE_PARALLEL_OFF;
 
-#ifdef LLVM_JIT
-bool        enable_llvm_jit = false;
+bool        enable_llvm_jit = true;
 bool        enable_llvm_dump = false;
 bool        debug_llvm_jit = false;
-#endif
 
 /* Hook for plugins to get control in planner() */
 planner_hook_type planner_hook = NULL;

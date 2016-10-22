@@ -7,7 +7,7 @@ SELECT name, setting FROM pg_settings WHERE name LIKE 'enable%';
  enable_indexonlyscan | on
  enable_indexscan     | on
  enable_llvm_dump     | off
- enable_llvm_jit      | off
+ enable_llvm_jit      | on
  enable_material      | on
  enable_mergejoin     | on
  enable_nestloop      | on
