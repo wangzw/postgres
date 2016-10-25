@@ -1091,6 +1091,7 @@ GenerateExpr(LLVMBuilderRef builder,
 			init_fcache(funcid, inputcollid, fexprstate,
 						econtext->ecxt_per_query_memory, true);
 			strict = fexprstate->func.fn_strict;
+			retSet = fexprstate->func.fn_retset;
 
 			if (strict)
 			{
@@ -1126,12 +1127,21 @@ GenerateExpr(LLVMBuilderRef builder,
 							LLVMInt8Type(), 1, false);
 					LLVMValueRef single_llvm = LLVMConstInt(
 							LLVMInt32Type(), ExprSingleResult, false);
-					LLVMValueRef isNull;
+					LLVMValueRef end_llvm = LLVMConstInt(
+							LLVMInt32Type(), ExprEndResult, false);
+					LLVMValueRef isDone = LLVMBuildICmp(builder, LLVMIntEQ,
+						arg.isDone, LLVMConstInt(LLVMInt32Type(), ExprEndResult, 0), "isDone");
+					LLVMValueRef isNull, isDone_phi;
 
 					this_bb = LLVMGetInsertBlock(builder);
 					LLVMAddIncoming(result.value, &null_llvm, &this_bb, 1);
 					LLVMAddIncoming(result.isNull, &true_llvm, &this_bb, 1);
-					LLVMAddIncoming(result.isDone, &single_llvm, &this_bb, 1);
+					if (retSet)
+						isDone_phi = end_llvm;
+					else
+						isDone_phi = LLVMBuildSelect(builder, isDone,
+							end_llvm, single_llvm, "select_isDone_phi");
+					LLVMAddIncoming(result.isDone, &isDone_phi, &this_bb, 1);
 					isNull = LLVMBuildIsNotNull(
 						builder, arg.isNull, "isNull");
 					LLVMBuildCondBr(builder, isNull, exit_bb, next_bb);
@@ -1142,7 +1152,6 @@ GenerateExpr(LLVMBuilderRef builder,
 				}
 			}
 
-			retSet = fexprstate->func.fn_retset;
 			hasSetArg = expression_returns_set(args);
 			fcinfo_llvm = GenerateInitFCInfo(
 				builder, fcinfo, rtcontext->fcinfo);
@@ -1167,25 +1176,22 @@ GenerateExpr(LLVMBuilderRef builder,
 								&this_bb, 1);
 				LLVMBuildBr(builder, exit_bb);
 				LLVMPositionBuilderAtEnd(builder, exit_bb);
-
-				if (hasSetArg)
-				{
-					for (i = 0; i < fcinfo->nargs; ++i)
-					{
-						LLVMValueRef attr_isDone = LLVMBuildICmp(
-							builder, LLVMIntEQ, attr[i].isDone,
-							LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
-							"attr_isDone");
-						result.isDone = LLVMBuildSelect(builder, attr_isDone,
-							result.isDone, attr[i].isDone, "select_isDone");
-					}
-				}
 			}
 			else
 			{
 				result = func_result;
 			}
-
+			if (hasSetArg)
+			{
+				LLVMValueRef result_isDone = LLVMBuildICmp(
+					builder, LLVMIntEQ, result.isDone,
+					LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
+					"result_isDone");
+				result.isDone = LLVMBuildSelect(builder, result_isDone,
+					result.isDone,
+					LLVMConstInt(LLVMInt32Type(), ExprMultipleResult, 0),
+					"select_isDone");
+			}
 			return result;
 		}
 
