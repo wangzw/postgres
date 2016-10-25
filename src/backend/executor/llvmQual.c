@@ -230,9 +230,9 @@ ExprStateEvalFuncType(void)
 
 
 static LLVMValueRef
-GenerateCallBackendWithTypeCheck(LLVMBuilderRef builder,
-								 LLVMValueRef (*define_func)(LLVMModuleRef),
-								 LLVMValueRef *args, int num_args)
+GenerateCallBackend(LLVMBuilderRef builder,
+					LLVMValueRef (*define_func)(LLVMModuleRef),
+					LLVMValueRef *args, int num_args)
 {
 	int i;
 	LLVMValueRef ret;
@@ -695,7 +695,7 @@ GetSomeAttrs(LLVMBuilderRef builder, LLVMValueRef slot, int attnum)
 		LLVMConstInt(LLVMInt32Type(), attnum, false)
 	};
 
-	GenerateCallBackendWithTypeCheck(
+	GenerateCallBackend(
 		builder, define_slot_getsomeattrs, args, lengthof(args));
 }
 
@@ -868,7 +868,7 @@ GetSysAttr(LLVMBuilderRef builder, LLVMValueRef tuple, AttrNumber attno,
 		isNull
 	};
 
-	return GenerateCallBackendWithTypeCheck(
+	return GenerateCallBackend(
 		builder, define_heap_getsysattr, args, lengthof(args));
 }
 
@@ -1037,13 +1037,13 @@ GenerateExpr(LLVMBuilderRef builder,
 				builder, rstate_tupdesc_ptr, "rstate_tupdesc");
 			heap_form_tuple_args[1] = values_llvm;
 			heap_form_tuple_args[2] = isNull_llvm;
-			tuple = GenerateCallBackendWithTypeCheck(
+			tuple = GenerateCallBackend(
 				builder, define_heap_form_tuple, heap_form_tuple_args, 3);
 
 			/* HeapTupleGetDatum */
 			t_data = LLVMBuildStructGEP(builder, tuple, 3, "t_data_ptr");
 			t_data = LLVMBuildLoad(builder, t_data, "t_data");
-			result.value = GenerateCallBackendWithTypeCheck(
+			result.value = GenerateCallBackend(
 				builder, define_HeapTupleHeaderGetDatum, &t_data, 1);
 			result.isNull = LLVMConstInt(LLVMInt8Type(), 0, false);
 
