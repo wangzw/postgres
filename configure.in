@@ -551,14 +551,15 @@ AC_SUBST(TAS)
 #
 # LLVM JIT
 #
-PGAC_ARG_BOOL(enable, llvm-jit, yes, [turn off llvm jit],
+PGAC_ARG_BOOL(enable, llvm-jit, yes, [turn off LLVM JIT],
               [AC_DEFINE([LLVM_JIT], 1,
-                         [Define to 1 to build with LLVM JIT. (--enable-llvm-jit)])])
+                         [build with LLVM JIT])])
 AC_SUBST(enable_llvm_jit)
 
 PGAC_ARG_REQ(with, llvm-config, [PATH], [how to run llvm-config])
+PGAC_ARG_REQ(with, clang, [PATH], [how to run clang])
 
-PGAC_ARG_BOOL(enable, jit-rebuild, no, [rebuild bytecode and llvm c++ api files for llvm jit])
+PGAC_ARG_BOOL(enable, jit-rebuild, no, [rebuild bitcode files and LLVM C++ API files])
 AC_SUBST(enable_jit_rebuild)
 
 #
@@ -2069,6 +2070,15 @@ if test "$enable_llvm_jit" = yes ; then
       AC_MSG_ERROR([special exact PATCHED version of LLVM - LLVM 3.7.1cppbe required for jit-rebuild])
     fi
     AC_MSG_RESULT([$LLVM_VERSION ok])
+
+    clang="clang-3.7"
+    if test "x$with_clang" != "x"; then
+      clang=$with_clang
+    fi
+    AC_MSG_CHECKING([for clang 3.7])
+    AS_IF([$clang --version | grep "version 3.7" ], [],
+          [AC_MSG_ERROR([clang 3.7 required, unable to run using "$clang"])])
+    AC_SUBST(clang)
   fi
 
   CFLAGS="$($llvm_config --cppflags | sed -e 's/-DNDEBUG\>//g') $CFLAGS"

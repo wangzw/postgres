@@ -200,6 +200,7 @@ enable_thread_safety	= @enable_thread_safety@
 enable_llvm_jit	= @enable_llvm_jit@
 llvm_config = @llvm_config@
 enable_jit_rebuild = @enable_jit_rebuild@
+clang = @clang@
 
 python_includespec	= @python_includespec@
 python_libdir		= @python_libdir@

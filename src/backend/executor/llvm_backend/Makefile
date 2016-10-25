@@ -12,18 +12,7 @@ subdir = src/backend/executor/llvm_backend
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
-CLANG := clang-3.7
-ifeq ($(CLANG),)
- CLANG := clang
- CLANGVERSION := $(shell $(CLANG) --version |\
-	head -n1 | sed 's/^[^0-9]*\([0-9.]*\).*/\1/')
- CLANGVERSION := $(shell expr $(CLANGVERSION) : '\([0-9]*\.[0-9]*\)')
- ifneq "$(CLANGVERSION)" "3.7"
-  $(error "Need Clang version 3.7 ($(CLANGVERSION))")
- endif
-endif
-
-CXXFLAGS := $(shell $(llvm_config) --cxxflags)
+CXXFLAGS := $(shell $(llvm_config) --cxxflags) -g0
 LLVM_BACKEND_FILE_LIMIT := 50
 OBJS := llvm_backend_wrapper.o llvm_backend.a
 
@@ -85,7 +74,7 @@ ifeq ($(enable_jit_rebuild), yes)
 
   $(LLVM_BACKEND_LIST): %.bc: $(top_srcdir)/src/backend/%.c
 	mkdir -p $(dir $@)
-	$(CLANG) -c -emit-llvm -I $(top_srcdir)/src/include $(CLANG_OPTS) $< -o $@
+	$(clang) -c -emit-llvm -I $(top_srcdir)/src/include $(CLANG_OPTS) $< -o $@
 else
   CP := ln -s
 
