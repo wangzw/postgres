@@ -53,11 +53,8 @@ ifeq ($(enable_jit_rebuild), yes)
 	-Wno-missing-prototypes
 
   LLVM_BACKEND_LIST := access/common/heaptuple.bc \
-        access/hash/hashfunc.bc \
-        access/heap/tuptoaster.bc \
         executor/execAmi.bc \
         executor/execTuples.bc \
-        storage/buffer/bufmgr.bc \
         utils/adt/arrayfuncs.bc \
         utils/adt/arrayutils.bc \
         utils/adt/bool.bc \
@@ -76,10 +73,7 @@ ifeq ($(enable_jit_rebuild), yes)
         utils/adt/timestamp.bc \
         utils/adt/varchar.bc \
         utils/adt/varlena.bc \
-        utils/fmgr/fmgr.bc \
-        utils/mb/mbutils.bc \
-        utils/mb/wchar.bc \
-        utils/mmgr/mcxt.bc
+        utils/fmgr/fmgr.bc
 
   llvm_backend.cpp: $(LLVM_BACKEND_LIST) passes/prune_static_vars.so
 	$(LLVM_LINK) $(filter %.bc,$^) -o backend.bc
