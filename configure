@@ -15307,7 +15307,7 @@ fi
     CPPFLAGS=$ac_save_CPPFLAGS
 fi
 
-# Add llvm-config cflags
+# Add llvm-config cppflags
 if test "$enable_llvm_jit" = yes ; then
   llvm_config="llvm-config"
   if test "x$with_llvm_config" != "x"; then
@@ -15361,7 +15361,7 @@ fi
 
   fi
 
-  CFLAGS="$($llvm_config --cppflags | sed -e 's/-DNDEBUG\>//g') $CFLAGS"
+  CPPFLAGS+=\ $($llvm_config --cppflags | sed -e 's/-D\S*DEBUG\S*\>//g')
 
 fi
 
