@@ -19,11 +19,12 @@ OBJS := llvm_backend_wrapper.o llvm_backend.a
 llvm_backend.o: llvm_backend.cpp llvm_backend_wrapper.o
 
 llvm_backend_wrapper.cpp: llvm_backend.cpp
-	./backend-split.sh $(LLVM_BACKEND_FILE_LIMIT) $< |\
-		xargs ./make-backend-wrapper.sh $(top_srcdir)/src
+	$(srcdir)/backend-split.sh $(LLVM_BACKEND_FILE_LIMIT) $< |\
+		xargs $(srcdir)/make-backend-wrapper.sh $(top_srcdir)/src
 
 llvm_backend.a: llvm_backend_wrapper.cpp
-	OBJ_PARTS=$$(echo llvm_backend.*.cpp | xargs -n1 sh -c 'echo $${0%.cpp}.o') &&\
+	OBJ_PARTS=$$(echo llvm_backend.*.cpp |\
+		xargs -n1 sh -c 'echo $${0%.cpp}.o') &&\
 	$(MAKE) -f $(top_srcdir)/src/backend/common.mk CXXFLAGS="$(CXXFLAGS)" $$OBJ_PARTS &&\
 	$(AR) r $@ $$OBJ_PARTS
 
@@ -35,7 +36,7 @@ ifeq ($(enable_jit_rebuild), yes)
   LLC := $(BINDIR)/llc
 
   OPT_OPTIONS := -O3
-  CLANG_OPTS := $(CFLAGS) -g0 \
+  CLANG_OPTS := $(CPPFLAGS) $(CFLAGS) -g0 \
 	-Wno-invalid-command-line-argument \
 	-Wno-unused-command-line-argument \
 	-Wno-ignored-attributes \
@@ -74,12 +75,12 @@ ifeq ($(enable_jit_rebuild), yes)
 
   $(LLVM_BACKEND_LIST): %.bc: $(top_srcdir)/src/backend/%.c
 	mkdir -p $(dir $@)
-	$(clang) -c -emit-llvm -I $(top_srcdir)/src/include $(CLANG_OPTS) $< -o $@
+	$(clang) -c -emit-llvm $(CLANG_OPTS) $< -o $@
 else
   CP := ln -s
 
   llvm_backend.cpp:
-	$(CP) prebuild_llvm_backend.cpp llvm_backend.cpp
+	$(CP) $(srcdir)/prebuild_llvm_backend.cpp llvm_backend.cpp
 
 endif
 

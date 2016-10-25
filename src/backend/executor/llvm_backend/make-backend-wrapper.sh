@@ -6,11 +6,9 @@ IFS=$'\n'
 PG_SRC=$1
 shift
 
-OUT=$(dirname $0)
-BACKEND_H=$OUT/llvm_backend.h
-BACKEND_WRAPPER_H=$OUT/llvm_backend_wrapper.h
-BACKEND_WRAPPER_CPP=$OUT/llvm_backend_wrapper.cpp
-mkdir -p $OUT
+BACKEND_H=llvm_backend.h
+BACKEND_WRAPPER_H=llvm_backend_wrapper.h
+BACKEND_WRAPPER_CPP=llvm_backend_wrapper.cpp
 
 EXTRA_FUNC_LIST="\
 HeapTupleHeaderGetDatum
