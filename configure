@@ -720,6 +720,7 @@ with_tcl
 enable_thread_safety
 INCLUDES
 autodepend
+enable_jit_rebuild
 enable_llvm_jit
 TAS
 GCC
@@ -821,6 +822,7 @@ with_wal_segsize
 with_CC
 enable_llvm_jit
 with_llvm_config
+enable_jit_rebuild
 enable_depend
 enable_cassert
 enable_thread_safety
@@ -1489,6 +1491,7 @@ Optional Features:
   --enable-dtrace         build with DTrace support
   --enable-tap-tests      enable TAP tests (requires Perl and IPC::Run)
   --disable-llvm-jit      turn off llvm jit
+  --enable-jit-rebuild    rebuild bytecode and llvm c++ api files for llvm jit
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --disable-thread-safety disable thread-safety in client libraries
@@ -5264,6 +5267,30 @@ if test "${with_llvm_config+set}" = set; then :
 
       ;;
   esac
+
+fi
+
+
+
+
+
+# Check whether --enable-jit-rebuild was given.
+if test "${enable_jit_rebuild+set}" = set; then :
+  enableval=$enable_jit_rebuild;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-jit-rebuild option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_jit_rebuild=no
 
 fi
 
@@ -15277,15 +15304,27 @@ $as_echo_n "checking for llvm version... " >&6; }
   LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $1}'`
   LLVM_VERSION_MINOR=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $2}'`
   LLVM_VERSION_PATCH=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $3}'`
-  if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7") || (test "x$LLVM_VERSION_PATCH" != "x1"); then
+  if (test "x$LLVM_VERSION_MAJOR" != "x3") || ((test "x$LLVM_VERSION_MINOR" != "x7") && (test "x$LLVM_VERSION_MINOR" != "x8")); then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION bad" >&5
 $as_echo "$LLVM_VERSION bad" >&6; }
-    as_fn_error $? "special patched LLVM 3.7.1 required" "$LINENO" 5
+    as_fn_error $? "LLVM version 3.7-3.8 required" "$LINENO" 5
   fi
-
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
 $as_echo "$LLVM_VERSION ok" >&6; }
-  CFLAGS="$($llvm_config --cflags) $CFLAGS"
+
+  if test "$enable_jit_rebuild" = yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for llvm version (for jit-rebuild)" >&5
+$as_echo_n "checking for llvm version (for jit-rebuild)... " >&6; }
+    if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7") || (test "x$LLVM_VERSION_PATCH" != "x1cppbe"); then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION bad" >&5
+$as_echo "$LLVM_VERSION bad" >&6; }
+      as_fn_error $? "special exact PATCHED version of LLVM - LLVM 3.7.1cppbe required for jit-rebuild" "$LINENO" 5
+    fi
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
+$as_echo "$LLVM_VERSION ok" >&6; }
+  fi
+
+  CFLAGS="$($llvm_config --cppflags | sed -e 's/-DNDEBUG\>//g') $CFLAGS"
 
 fi
 

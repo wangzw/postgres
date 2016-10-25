@@ -558,6 +558,8 @@ AC_SUBST(enable_llvm_jit)
 
 PGAC_ARG_REQ(with, llvm-config, [PATH], [how to run llvm-config])
 
+PGAC_ARG_BOOL(enable, jit-rebuild, no, [rebuild bytecode and llvm c++ api files for llvm jit])
+AC_SUBST(enable_jit_rebuild)
 
 #
 # Automatic dependency tracking
@@ -2054,13 +2056,22 @@ if test "$enable_llvm_jit" = yes ; then
   LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $1}'`
   LLVM_VERSION_MINOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $2}'`
   LLVM_VERSION_PATCH=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $3}'`
-  if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7") || (test "x$LLVM_VERSION_PATCH" != "x1"); then
+  if (test "x$LLVM_VERSION_MAJOR" != "x3") || ((test "x$LLVM_VERSION_MINOR" != "x7") && (test "x$LLVM_VERSION_MINOR" != "x8")); then
     AC_MSG_RESULT([$LLVM_VERSION bad])
-    AC_MSG_ERROR([special patched LLVM 3.7.1 required])
+    AC_MSG_ERROR([LLVM version 3.7-3.8 required])
+  fi
+  AC_MSG_RESULT([$LLVM_VERSION ok])
+
+  if test "$enable_jit_rebuild" = yes; then
+    AC_MSG_CHECKING([for llvm version (for jit-rebuild)])
+    if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7") || (test "x$LLVM_VERSION_PATCH" != "x1cppbe"); then
+      AC_MSG_RESULT([$LLVM_VERSION bad])
+      AC_MSG_ERROR([special exact PATCHED version of LLVM - LLVM 3.7.1cppbe required for jit-rebuild])
+    fi
+    AC_MSG_RESULT([$LLVM_VERSION ok])
   fi
 
-  AC_MSG_RESULT([$LLVM_VERSION ok])
-  CFLAGS="$($llvm_config --cflags) $CFLAGS"
+  CFLAGS="$($llvm_config --cppflags | sed -e 's/-DNDEBUG\>//g') $CFLAGS"
   AC_SUBST(llvm_config)
 fi
 
