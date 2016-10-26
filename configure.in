@@ -2057,9 +2057,9 @@ if test "$enable_llvm_jit" = yes ; then
   LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $1}'`
   LLVM_VERSION_MINOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $2}'`
   LLVM_VERSION_PATCH=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $3}'`
-  if (test "x$LLVM_VERSION_MAJOR" != "x3") || ((test "x$LLVM_VERSION_MINOR" != "x7") && (test "x$LLVM_VERSION_MINOR" != "x8")); then
+  if (test "x$LLVM_VERSION_MAJOR" != "x3") || ((test "x$LLVM_VERSION_MINOR" != "x7")); then
     AC_MSG_RESULT([$LLVM_VERSION bad])
-    AC_MSG_ERROR([LLVM version 3.7-3.8 required])
+    AC_MSG_ERROR([LLVM version 3.7(.1) required])
   fi
   AC_MSG_RESULT([$LLVM_VERSION ok])
 
