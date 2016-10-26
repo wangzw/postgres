@@ -3,12 +3,14 @@
 set -euo pipefail
 IFS=$'\n'
 
-PG_SRC=$1
-shift
-
+#
+# Output files.
+#
 BACKEND_H=llvm_backend.h
 BACKEND_WRAPPER_H=llvm_backend_wrapper.h
 BACKEND_WRAPPER_CPP=llvm_backend_wrapper.cpp
+
+FMGRTAB=../../utils/fmgrtab.c
 
 EXTRA_FUNC_LIST="\
 HeapTupleHeaderGetDatum
@@ -99,8 +101,7 @@ cat > $BACKEND_WRAPPER_CPP <<-EOF
 	    llvmFuncDefineRef     	func;
 	} llvmDefineFunc [] = {
 	$(join -1 4 -2 1 -o "1.1 1.2 1.3 1.4 1.5" <(\
-			awk '/^ *{/ { print "  {", $2, "& define_" $7, "}," }' \
-				$PG_SRC/backend/utils/fmgrtab.c |
+			awk '/^ *{/ { print "  {", $2, "& define_" $7, "}," }' $FMGRTAB |
 			sort -k4) -<<<"$FUNCTION_LIST" |
 	   sort -k2 -n)
 	};

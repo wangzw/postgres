@@ -20,7 +20,7 @@ llvm_backend.o: llvm_backend.cpp llvm_backend_wrapper.o
 
 llvm_backend_wrapper.cpp: llvm_backend.cpp
 	$(srcdir)/backend-split.sh $(LLVM_BACKEND_FILE_LIMIT) $< |\
-		xargs $(srcdir)/make-backend-wrapper.sh $(top_srcdir)/src
+		xargs $(srcdir)/make-backend-wrapper.sh
 
 llvm_backend.a: llvm_backend_wrapper.cpp
 	OBJ_PARTS=$$(echo llvm_backend.*.cpp |\
