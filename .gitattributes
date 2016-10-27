@@ -34,3 +34,7 @@ src/backend/snowball/libstemmer/*.c	-whitespace
 src/backend/utils/mb/Unicode/*-std.txt	-whitespace
 src/include/snowball/libstemmer/*	-whitespace
 src/timezone/data/*			-whitespace
+
+# If not ignored specifically, prebuilt LLVM backend would account for
+# the vast majority of language share on GitHub.
+src/backend/executor/llvm_backend/prebuild_llvm_backend.cpp	linguist-vendored
