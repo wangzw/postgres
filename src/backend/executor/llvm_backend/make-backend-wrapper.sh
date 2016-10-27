@@ -19,16 +19,12 @@ heap_getsysattr
 slot_getsomeattrs"
 
 FUNCTION_LIST=$(\
-	grep --only-matching --no-filename --perl-regexp \
-		 '(?<=Function\* ).*(?=\(Module \*mod\) \{)' $@ |
+	awk -F'[( ]' '/Function\* .*\(Module \*mod\) \{/ { print $2 }' $@ |
 		sort)
 
 TYPE_LIST=$(\
-	grep --only-matching --no-filename --perl-regexp \
-		 '(?<=Type\* ).*(?=\(Module \*mod\) \{)' $@ |
+	awk -F'[( ]' '/Type\* .*\(Module \*mod\) \{/ { print $2 }' $@ |
 		sort)
-
-sed -i "1i#include \"$(basename $BACKEND_H)\"\n" $@
 
 #
 # Generate BACKEND_WRAPPER_H.

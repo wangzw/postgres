@@ -77,17 +77,14 @@ ifeq ($(enable_jit_rebuild), yes)
 	mkdir -p $(dir $@)
 	$(clang) -c -emit-llvm $(CLANG_OPTS) $< -o $@
 else
-  CP := ln -s
-
   llvm_backend.cpp:
-	$(CP) $(srcdir)/prebuild_llvm_backend.cpp llvm_backend.cpp
-
+	$(LN_S) $(srcdir)/prebuild_llvm_backend.cpp llvm_backend.cpp
 endif
 
 clean:
 	$(RM) llvm_backend_wrapper.cpp llvm_backend_wrapper.h \
 		llvm_backend.cpp llvm_backend.h
 	$(RM) $(wildcard llvm_backend.*.*)
-	find \( -name "*.bc" -o -type d -empty \) -delete
+	find . \( -name "*.bc" -o -type d -empty \) -delete
 
 include $(top_srcdir)/src/backend/common.mk
