@@ -1933,14 +1933,7 @@ CompileExpr(ExprState *exprstate, ExprContext *econtext)
 		pfree(rtcontext);
 	}
 
-#ifdef USE_ASSERT_CHECKING
-	if (!VerifyModule(mod))
-	{
-		LLVMDisposeBuilder(builder);
-		LLVMDisposeModule(mod);
-		return NULL;
-	}
-#endif
+	Assert(VerifyModule(mod));
 
 	if (enable_llvm_dump)
 	{
