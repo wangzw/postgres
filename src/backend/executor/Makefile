@@ -31,10 +31,7 @@ ifeq ($(enable_llvm_jit), yes)
   OBJS += llvmQual.o
   SUBDIRS += llvm_backend
 
-  llvmQual.o: CPPFLAGS := -I $(top_builddir)/$(subdir) $(CPPFLAGS)
-  llvmQual.o: llvm_backend/llvm_backend_wrapper.h
-
-  llvm_backend/llvm_backend_wrapper.h: llvm_backend/objfiles.txt
+  llvmQual.o: llvm_backend/objfiles.txt
 endif
 
 include $(top_srcdir)/src/backend/common.mk
