@@ -149,11 +149,6 @@ utils/fmgroids.h: utils/Gen_fmgrtab.pl catalog/Catalog.pm $(top_srcdir)/src/incl
 utils/probes.h: utils/probes.d
 	$(MAKE) -C utils probes.h
 
-ifeq ($(enable_llvm_jit), yes)
-executor/llvm_backend/llvm_backend_wrapper.h:
-	$(MAKE) -C executor/llvm_backend llvm_backend_wrapper.cpp
-endif
-
 # run this unconditionally to avoid needing to know its dependencies here:
 catalog/schemapg.h: | submake-schemapg
 
@@ -173,9 +168,11 @@ submake-schemapg:
 # will be in the build tree, so a simple ../.. reference won't work.
 # For headers generated during regular builds, we prefer a relative symlink.
 
-.PHONY: generated-headers
+.PHONY: generated-headers generated-headers-helper
 
-generated-headers: $(top_builddir)/src/include/parser/gram.h $(top_builddir)/src/include/catalog/schemapg.h $(top_builddir)/src/include/storage/lwlocknames.h $(top_builddir)/src/include/utils/errcodes.h $(top_builddir)/src/include/utils/fmgroids.h $(top_builddir)/src/include/utils/probes.h
+generated-headers-helper: $(top_builddir)/src/include/parser/gram.h $(top_builddir)/src/include/catalog/schemapg.h $(top_builddir)/src/include/storage/lwlocknames.h $(top_builddir)/src/include/utils/errcodes.h $(top_builddir)/src/include/utils/fmgroids.h $(top_builddir)/src/include/utils/probes.h
+
+generated-headers: generated-headers-helper
 
 $(top_builddir)/src/include/parser/gram.h: parser/gram.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
@@ -207,6 +204,9 @@ $(top_builddir)/src/include/utils/probes.h: utils/probes.h
 	    $(LN_S) "../../../$(subdir)/utils/probes.h" .
 
 ifeq ($(enable_llvm_jit), yes)
+executor/llvm_backend/llvm_backend_wrapper.h: generated-headers-helper
+	$(MAKE) -C executor/llvm_backend llvm_backend_wrapper.cpp
+
 generated-headers: $(top_builddir)/src/include/executor/llvm_backend_wrapper.h
 
 $(top_builddir)/src/include/executor/llvm_backend_wrapper.h: executor/llvm_backend/llvm_backend_wrapper.h
