@@ -13,10 +13,15 @@ BACKEND_WRAPPER_CPP=llvm_backend_wrapper.cpp
 FMGRTAB=../../utils/fmgrtab.c
 
 EXTRA_FUNC_LIST="\
+ExecFetchSlotTupleDatum
 HeapTupleHeaderGetDatum
 heap_form_tuple
 heap_getsysattr
-slot_getsomeattrs"
+MakeSingleTupleTableSlot
+slot_getattr
+slot_getsomeattrs
+tuplestore_end
+tuplestore_gettupleslot"
 
 FUNCTION_LIST=$(\
 	awk -F'[( ]' '/Function\* .*\(Module \*mod\) \{/ { print $2 }' $@ |

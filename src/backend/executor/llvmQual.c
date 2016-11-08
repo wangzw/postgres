@@ -369,7 +369,7 @@ define_llvm_pg_function(LLVMBuilderRef builder, FmgrInfo *flinfo)
 static LLVMTupleAttr
 GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 							  LLVMValueRef fcinfo_llvm, LLVMTupleAttr *attr,
-							  bool retSet, bool hasSetArg)
+							  bool retSet, LLVMValueRef hasSetArg)
 {
 
 	LLVMTupleAttr result = INIT_LLVMTUPLEATTR;
@@ -438,27 +438,15 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	if (retSet)
 		result.isDone = LLVMBuildLoad(builder, rsinfo_isDone_ptr, "isDone");
 	else
-		if (hasSetArg)
-		{
-			for (arg_index = 0; arg_index < fcinfo->nargs; ++arg_index)
-			{
-				LLVMValueRef attr_isDone = LLVMBuildICmp(
-						builder, LLVMIntEQ, attr[arg_index].isDone,
-						LLVMConstInt(LLVMInt32Type(), ExprSingleResult, false),
-						"attr_isDone");
-				result.isDone = LLVMBuildSelect(builder, attr_isDone,
-						result.isDone, attr[arg_index].isDone, "select_isDone");
-			}
-		}
-		else
-			result.isDone = LLVMConstInt(
-					LLVMInt32Type(), ExprSingleResult, false);
+	{
+		result.isDone = LLVMConstInt(LLVMInt32Type(), ExprSingleResult, false);
+	}
 
 	return result;
 }
 
 
-static void
+static LLVMValueRef
 FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 					TupleDesc expectedDesc, LLVMValueRef fcinfo_llvm)
 {
@@ -466,7 +454,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 		LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
 	LLVMTypeRef rsinfoType = BackendStructType(ReturnSetInfo);
 	LLVMValueRef rsinfo_ptr = LLVMBuildAlloca(builder, rsinfoType, "rsinfo");
-
+	LLVMValueRef ret = rsinfo_ptr;
 	LLVMValueRef rsinfo_type_ptr =
 		LLVMBuildStructGEP(builder, rsinfo_ptr, 0, "&rsinfo->type");
 	LLVMValueRef rsinfo_econtext_ptr =
@@ -508,6 +496,7 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 	rsinfo_ptr = LLVMBuildBitCast(builder, rsinfo_ptr,
 		LLVMGetElementType(LLVMTypeOf(resultinfo_ptr)), "rsinfo");
 	LLVMBuildStore(builder, rsinfo_ptr, resultinfo_ptr);
+	return ret;
 }
 
 
@@ -699,6 +688,23 @@ GetSomeAttrs(LLVMBuilderRef builder, LLVMValueRef slot, int attnum)
 		builder, define_slot_getsomeattrs, args, lengthof(args));
 }
 
+
+/*
+ * GetAttr - generate a call to `slot_getattr`
+ */
+static LLVMValueRef
+GetAttr(LLVMBuilderRef builder, LLVMValueRef slot,
+		int attnum, LLVMValueRef isNull)
+{
+	LLVMValueRef args[] = {
+		slot,
+		LLVMConstInt(LLVMInt32Type(), attnum, false),
+		isNull
+	};
+
+	return GenerateCallBackend(
+		builder, define_slot_getattr, args, lengthof(args));
+}
 
 /*
  * LoadUsedAttrs - load attributes used in the expression
@@ -1055,31 +1061,39 @@ GenerateExpr(LLVMBuilderRef builder,
 		{
 			FuncExprState *fexprstate = (FuncExprState *) exprstate;
 			FunctionCallInfo fcinfo = &fexprstate->fcinfo_data;
-			Node *args = NULL;
 			Oid funcid = 0;
 			Oid inputcollid = 0;
-			bool strict, retSet, hasSetArg;
-			LLVMTupleAttr result, func_result;
+			bool strict, retSet;
+			LLVMValueRef hasSetArg_ptr = LLVMBuildAlloca(
+					builder, LLVMInt1Type(), "&hasSetArg");
+			LLVMValueRef argsAreDone_ptr = LLVMBuildAlloca(
+					builder, LLVMInt1Type(), "&argsAreDone");
+			LLVMTupleAttr result, func_result, mid_result;
 			LLVMTupleAttr attr[list_length(fexprstate->args)];
-			LLVMValueRef fcinfo_llvm;
+			LLVMValueRef fcinfo_llvm, funcResultStore, funcResultStore_ptr,
+						 cond, frsIsNull, rsinfo_ptr, hasSetArg, argsAreDone;
+			LLVMValueRef vars[4];
 			ListCell* cell;
 			short i;
+
+			LLVMValueRef multi_llvm = LLVMConstInt(
+							LLVMInt32Type(), ExprMultipleResult, 0);
 
 			LLVMBasicBlockRef this_bb = LLVMGetInsertBlock(builder);
 			LLVMValueRef function = LLVMGetBasicBlockParent(this_bb);
 			LLVMBasicBlockRef exit_bb = 0;  /* -Wmaybe-uninitialized */
-
+			LLVMBasicBlockRef tuplestore_bb = 0, tuplestore_tuple_bb = 0,
+							  tuplestore_no_tuple_bb = 0, calculate_bb = 0,
+							  exit_no_calc_bb = 0;
 			if (IsA(exprstate->expr, OpExpr))
 			{
 				OpExpr *op = (OpExpr *) exprstate->expr;
-				args = (Node *)op->args;
 				funcid = op->opfuncid;
 				inputcollid = op->inputcollid;
 			}
 			else if (IsA(exprstate->expr, FuncExpr))
 			{
 				FuncExpr *func_expr = (FuncExpr *) exprstate->expr;
-				args = (Node *)func_expr->args;
 				funcid = func_expr->funcid;
 				inputcollid = func_expr->inputcollid;
 			}
@@ -1088,25 +1102,60 @@ GenerateExpr(LLVMBuilderRef builder,
 				Assert(false);
 			}
 
+			LLVMBuildStore(builder,
+				LLVMConstInt(LLVMInt1Type(), false, 0), hasSetArg_ptr);
+			LLVMBuildStore(builder,
+				LLVMConstInt(LLVMInt1Type(), false, 0), argsAreDone_ptr);
 			init_fcache(funcid, inputcollid, fexprstate,
 						econtext->ecxt_per_query_memory, true);
+
 			strict = fexprstate->func.fn_strict;
 			retSet = fexprstate->func.fn_retset;
 
-			if (strict)
+			funcResultStore_ptr = ConstPointer(LLVMPointerType(
+				LLVMPointerType(BackendStructType(Tuplestorestate), 0), 0),
+				&fexprstate->funcResultStore);
+			if (retSet)
 			{
-				exit_bb = LLVMAppendBasicBlock(function, "FuncExpr_exit");
+				tuplestore_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_tuplestore");
+				tuplestore_tuple_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_tuplestore_tuple");
+				tuplestore_no_tuple_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_tuplestore_no_tuple");
+				calculate_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_calculate");
+				exit_no_calc_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_exit_no_calc");
+				funcResultStore = LLVMBuildLoad(builder, funcResultStore_ptr,
+						"funcResultStore");
+				frsIsNull = LLVMBuildIsNull(builder, funcResultStore,
+						"funcResultStore==NULL");
+				LLVMBuildCondBr(builder, frsIsNull, calculate_bb, tuplestore_bb);
 
-				LLVMPositionBuilderAtEnd(builder, exit_bb);
+				LLVMPositionBuilderAtEnd(builder, exit_no_calc_bb);
 				result.value = LLVMBuildPhi(
-					builder, LLVMInt64Type(), "value");
+						builder, LLVMInt64Type(), "value");
 				result.isNull = LLVMBuildPhi(
-					builder, LLVMInt8Type(), "isNull");
+						builder, LLVMInt8Type(), "isNull");
 				result.isDone = LLVMBuildPhi(
-					builder, LLVMInt32Type(), "isDone");
+						builder, LLVMInt32Type(), "isDone");
 
-				LLVMPositionBuilderAtEnd(builder, this_bb);
+				LLVMPositionBuilderAtEnd(builder, calculate_bb);
+				this_bb = calculate_bb;
 			}
+
+			exit_bb = LLVMAppendBasicBlock(function, "FuncExpr_exit");
+
+			LLVMPositionBuilderAtEnd(builder, exit_bb);
+			mid_result.value = LLVMBuildPhi(
+				builder, LLVMInt64Type(), "value");
+			mid_result.isNull = LLVMBuildPhi(
+				builder, LLVMInt8Type(), "isNull");
+			mid_result.isDone = LLVMBuildPhi(
+				builder, LLVMInt32Type(), "isDone");
+
+			LLVMPositionBuilderAtEnd(builder, this_bb);
 
 			i = 0;
 			foreach (cell, fexprstate->args)
@@ -1114,10 +1163,26 @@ GenerateExpr(LLVMBuilderRef builder,
 				ExprState *argstate = lfirst(cell);
 				LLVMTupleAttr arg = GenerateExpr(
 					builder, argstate, econtext, rtcontext);
+				LLVMValueRef hasSetArg_cond, arg_isDone;
 
 				attr[i] = arg;
 				i++;
-
+				hasSetArg_cond = LLVMBuildICmp(builder, LLVMIntNE,
+					arg.isDone, LLVMConstInt(LLVMInt32Type(), ExprSingleResult, 0),
+					"");
+				hasSetArg = LLVMBuildLoad(builder, hasSetArg_ptr, "");
+				hasSetArg = LLVMBuildSelect(builder, hasSetArg_cond,
+					LLVMConstInt(LLVMInt1Type(), 1, 0), hasSetArg,
+					"select_hasSetArg");
+				LLVMBuildStore(builder, hasSetArg, hasSetArg_ptr);
+				arg_isDone = LLVMBuildICmp(builder, LLVMIntEQ,
+					arg.isDone, LLVMConstInt(LLVMInt32Type(), ExprEndResult, 0),
+					"");
+				argsAreDone = LLVMBuildLoad(builder, argsAreDone_ptr, "argsAreDone");
+				argsAreDone = LLVMBuildSelect(builder, arg_isDone,
+					LLVMConstInt(LLVMInt1Type(), 1, 0), argsAreDone,
+					"select_argsAreDone");
+				LLVMBuildStore(builder, argsAreDone, argsAreDone_ptr);
 				if (strict)
 				{
 					LLVMBasicBlockRef next_bb = LLVMAppendBasicBlock(
@@ -1134,14 +1199,14 @@ GenerateExpr(LLVMBuilderRef builder,
 					LLVMValueRef isNull, isDone_phi;
 
 					this_bb = LLVMGetInsertBlock(builder);
-					LLVMAddIncoming(result.value, &null_llvm, &this_bb, 1);
-					LLVMAddIncoming(result.isNull, &true_llvm, &this_bb, 1);
+					LLVMAddIncoming(mid_result.value, &null_llvm, &this_bb, 1);
+					LLVMAddIncoming(mid_result.isNull, &true_llvm, &this_bb, 1);
 					if (retSet)
 						isDone_phi = end_llvm;
 					else
 						isDone_phi = LLVMBuildSelect(builder, isDone,
 							end_llvm, single_llvm, "select_isDone_phi");
-					LLVMAddIncoming(result.isDone, &isDone_phi, &this_bb, 1);
+					LLVMAddIncoming(mid_result.isDone, &isDone_phi, &this_bb, 1);
 					isNull = LLVMBuildIsNotNull(
 						builder, arg.isNull, "isNull");
 					LLVMBuildCondBr(builder, isNull, exit_bb, next_bb);
@@ -1150,47 +1215,226 @@ GenerateExpr(LLVMBuilderRef builder,
 					LLVMMoveBasicBlockBefore(next_bb, exit_bb);
 					this_bb = next_bb;
 				}
+				else
+					this_bb = LLVMGetInsertBlock(builder);
 			}
 
-			hasSetArg = expression_returns_set(args);
+			/*
+			 * If a previous call of the function returned a set result in the form of
+			 * a tuplestore, continue reading rows from the tuplestore until it's
+			 * empty.
+			 */
+			if (retSet)
+			{
+				LLVMValueRef null_llvm = LLVMConstNull(LLVMInt64Type());
+				LLVMValueRef true_llvm = LLVMConstInt(
+						LLVMInt8Type(), 1, 0);
+				LLVMValueRef end_llvm = LLVMConstInt(
+						LLVMInt32Type(), ExprEndResult, 0);
+				LLVMPositionBuilderAtEnd(builder, tuplestore_bb);
+				vars[0] = LLVMBuildLoad(builder, funcResultStore_ptr,
+										"funcResultStore");
+				vars[1] = LLVMConstInt(LLVMInt8Type(), true, 0);
+				vars[2] = LLVMConstInt(LLVMInt8Type(), false, 0);
+				vars[3] = ConstPointer(LLVMPointerType(
+					LLVMPointerType(BackendStructType(TupleTableSlot), 0), 0),
+					&fexprstate->funcResultSlot);
+				vars[3] = LLVMBuildLoad(builder, vars[3], "");
+				cond = GenerateCallBackend(
+					builder, define_tuplestore_gettupleslot, vars, 4);
+				cond = LLVMBuildIsNotNull(builder, cond, "");
+				LLVMBuildCondBr(builder, cond, tuplestore_tuple_bb,
+					tuplestore_no_tuple_bb);
+
+				LLVMPositionBuilderAtEnd(builder, tuplestore_tuple_bb);
+				LLVMAddIncoming(result.isDone, &multi_llvm, &tuplestore_tuple_bb, 1);
+				if (fexprstate->funcReturnsTuple)
+				{
+					/* We must return the whole tuple as a Datum. */
+					LLVMValueRef false_llvm = LLVMConstInt(
+						LLVMInt8Type(), false, 0);
+					LLVMValueRef value = GenerateCallBackend(
+						builder, define_ExecFetchSlotTupleDatum, &vars[3], 1);
+					LLVMAddIncoming(result.value, &value,
+									&tuplestore_tuple_bb, 1);
+					LLVMAddIncoming(result.isNull, &false_llvm,
+									&tuplestore_tuple_bb, 1);
+				}
+				else
+				{
+					/* Extract the first column and return it as a scalar. */
+					LLVMValueRef funcResultSlot = vars[3];
+					LLVMValueRef value = GetAttr(
+						builder, funcResultSlot, 1, rtcontext->isNullPtr);
+					LLVMValueRef isNull = LLVMBuildLoad(
+					builder, rtcontext->isNullPtr, "var_isNull");
+					LLVMAddIncoming(result.value, &value, &tuplestore_tuple_bb, 1);
+					LLVMAddIncoming(result.isNull, &isNull, &tuplestore_tuple_bb, 1);
+				}
+				LLVMBuildBr(builder, exit_no_calc_bb);
+
+				/* Exhausted the tuplestore, so clean up */
+				LLVMPositionBuilderAtEnd(builder, tuplestore_no_tuple_bb);
+				GenerateCallBackend(builder,
+					define_tuplestore_end, vars, 1);
+				LLVMBuildStore(builder, LLVMConstNull(LLVMTypeOf(funcResultStore)),
+					funcResultStore_ptr);
+				hasSetArg = LLVMBuildLoad(builder, hasSetArg_ptr, "hasSetArg");
+				LLVMAddIncoming(result.value, &null_llvm,
+								&tuplestore_no_tuple_bb, 1);
+				LLVMAddIncoming(result.isNull, &true_llvm,
+								&tuplestore_no_tuple_bb, 1);
+				LLVMAddIncoming(result.isDone, &end_llvm,
+								&tuplestore_no_tuple_bb, 1);
+				LLVMBuildCondBr(builder, hasSetArg, calculate_bb, exit_no_calc_bb);
+			}
+			LLVMPositionBuilderAtEnd(builder, this_bb);
 			fcinfo_llvm = GenerateInitFCInfo(
 				builder, fcinfo, rtcontext->fcinfo);
 
 			if (retSet)
 			{
-				FCInfoLLVMAddRetSet(
+				rsinfo_ptr = FCInfoLLVMAddRetSet(
 						builder, econtext, fexprstate->funcResultDesc,
 						fcinfo_llvm);
 			}
-
+			hasSetArg = LLVMBuildLoad(builder, hasSetArg_ptr, "hasSetArg");
 			func_result = GenerateFunctionCallNCollNull(
 					builder, fcinfo, fcinfo_llvm, attr, retSet, hasSetArg);
 
-			if (strict)
+			/* SFRM_Materialize implementation */
+			if (retSet)
 			{
-				LLVMAddIncoming(result.value, &func_result.value,
-								&this_bb, 1);
-				LLVMAddIncoming(result.isNull, &func_result.isNull,
-								&this_bb, 1);
-				LLVMAddIncoming(result.isDone, &func_result.isDone,
-								&this_bb, 1);
-				LLVMBuildBr(builder, exit_bb);
-				LLVMPositionBuilderAtEnd(builder, exit_bb);
+				LLVMValueRef funcResultSlot_ptr =
+					ConstPointer(LLVMPointerType(LLVMPointerType(
+									BackendStructType(TupleTableSlot), 0), 0),
+							&fexprstate->funcResultSlot);
+				LLVMValueRef rsinfo_returnMode_ptr =
+					LLVMBuildStructGEP(builder, rsinfo_ptr, 4,
+							"&rsinfo->returnMode");
+				LLVMValueRef returnMode = LLVMBuildLoad(
+						builder, rsinfo_returnMode_ptr, "rsinfo->returnMode");
+				LLVMValueRef cond = LLVMBuildICmp(builder, LLVMIntEQ, returnMode,
+						LLVMConstInt(LLVMInt32Type(), SFRM_Materialize, 0), "");
+				LLVMValueRef null_llvm = LLVMConstNull(LLVMInt64Type());
+				LLVMValueRef true_llvm = LLVMConstInt(
+						LLVMInt8Type(), 1, 0);
+				LLVMValueRef end_llvm = LLVMConstInt(
+						LLVMInt32Type(), ExprEndResult, 0);
+				LLVMValueRef rsinfo_setResult_ptr, setResult, slotDesc,
+							 rsinfo_setDesc_ptr, setDesc, slot_ptr;
+
+				LLVMBasicBlockRef materialize_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_materialize");
+				LLVMBasicBlockRef restart_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_restart");
+				LLVMMoveBasicBlockBefore(materialize_bb, exit_bb);
+				LLVMMoveBasicBlockBefore(restart_bb, exit_bb);
+
+				LLVMBuildCondBr(builder, cond, materialize_bb, exit_bb);
+
+				LLVMPositionBuilderAtEnd(builder, materialize_bb);
+				LLVMAddIncoming(result.value, &null_llvm,
+						&materialize_bb, 1);
+				LLVMAddIncoming(result.isNull, &true_llvm,
+						&materialize_bb, 1);
+				LLVMAddIncoming(result.isDone, &end_llvm,
+						&materialize_bb, 1);
+				rsinfo_setResult_ptr =
+					LLVMBuildStructGEP(builder, rsinfo_ptr, 6,
+							"&rsinfo->setResult");
+				setResult = LLVMBuildLoad(
+						builder, rsinfo_setResult_ptr, "rsinfo->setResult");
+
+				/* if setResult was left null, treat it as empty set */
+				cond = LLVMBuildIsNull(builder, setResult, "");
+				LLVMBuildCondBr(builder, cond, exit_no_calc_bb, restart_bb);
+
+				/* prepare to return values from the tuplestore */
+				LLVMPositionBuilderAtEnd(builder, restart_bb);
+				LLVMBuildStore(builder, setResult, funcResultStore_ptr);
+				rsinfo_setDesc_ptr =
+					LLVMBuildStructGEP(builder, rsinfo_ptr, 7,
+							"&rsinfo->setDesc");
+				setDesc = LLVMBuildLoad(
+						builder, rsinfo_setDesc_ptr, "rsinfo->setDesc");
+				if (fexprstate->funcResultDesc)
+					slotDesc = ConstPointer(
+							LLVMPointerType(LLVMInt8Type(), 0),
+							fexprstate->funcResultDesc);
+				else
+					slotDesc = setDesc;
+				slot_ptr = GenerateCallBackend(
+						builder, define_MakeSingleTupleTableSlot, &slotDesc, 1);
+				LLVMBuildStore(builder, slot_ptr, funcResultSlot_ptr);
+
+				/* loop back to top to start returning from tuplestore */
+				LLVMBuildBr(builder, tuplestore_bb);
 			}
 			else
-			{
-				result = func_result;
-			}
-			if (hasSetArg)
+				LLVMBuildBr(builder, exit_bb);
+
+			LLVMAddIncoming(mid_result.value, &func_result.value,
+					&this_bb, 1);
+			LLVMAddIncoming(mid_result.isNull, &func_result.isNull,
+					&this_bb, 1);
+			LLVMAddIncoming(mid_result.isDone, &func_result.isDone,
+					&this_bb, 1);
+			LLVMPositionBuilderAtEnd(builder, exit_bb);
 			{
 				LLVMValueRef result_isDone = LLVMBuildICmp(
-					builder, LLVMIntEQ, result.isDone,
-					LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
-					"result_isDone");
-				result.isDone = LLVMBuildSelect(builder, result_isDone,
-					result.isDone,
-					LLVMConstInt(LLVMInt32Type(), ExprMultipleResult, 0),
-					"select_isDone");
+						builder, LLVMIntNE, mid_result.isDone,
+						LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
+						"result_isDone");
+				hasSetArg = LLVMBuildLoad(builder, hasSetArg_ptr, "hasSetArg");
+				result_isDone = LLVMBuildAnd(builder,
+						result_isDone, hasSetArg,
+						"result_isDone && hasSetArg");
+				mid_result.isDone = LLVMBuildSelect(builder, result_isDone,
+						LLVMConstInt(LLVMInt32Type(), ExprMultipleResult, 0),
+						mid_result.isDone,
+						"select_isDone");
+			}
+
+			if (exit_no_calc_bb)
+			{
+				LLVMBuildBr(builder, exit_no_calc_bb);
+				LLVMMoveBasicBlockAfter(exit_no_calc_bb, exit_bb);
+
+				LLVMAddIncoming(result.value, &mid_result.value,
+						&exit_bb, 1);
+				LLVMAddIncoming(result.isNull, &mid_result.isNull,
+						&exit_bb, 1);
+				LLVMAddIncoming(result.isDone, &mid_result.isDone,
+						&exit_bb, 1);
+				LLVMPositionBuilderAtEnd(builder, exit_no_calc_bb);
+			}
+			else
+				result = mid_result;
+
+			/*
+			 * For set returning functions we should only return if both
+			 * the function and its set arg are done. Else we loop around
+			 * to arg evaluation.
+			 */
+			if (retSet)
+			{
+				LLVMBasicBlockRef continue_bb =
+					LLVMAppendBasicBlock(function, "FuncExpr_continue");
+				LLVMValueRef result_isDone = LLVMBuildICmp(
+						builder, LLVMIntEQ, result.isDone,
+						LLVMConstInt(LLVMInt32Type(), ExprEndResult, false),
+						"result_isDone");
+				hasSetArg = LLVMBuildLoad(builder, hasSetArg_ptr, "hasSetArg");
+				result_isDone = LLVMBuildAnd(builder,
+						result_isDone, hasSetArg,
+						"result_isDone && hasSetArg");
+				argsAreDone = LLVMBuildLoad(builder, argsAreDone_ptr, "argsAreDone");
+				result_isDone = LLVMBuildSelect(builder, argsAreDone,
+						LLVMConstNull(LLVMInt1Type()),result_isDone, "select_isDone");
+				LLVMBuildCondBr(builder, result_isDone, calculate_bb, continue_bb);
+
+				LLVMPositionBuilderAtEnd(builder, continue_bb);
 			}
 			return result;
 		}
@@ -1312,6 +1556,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				builder, LLVMInt64Type(), "case_result");
 			result.isNull = LLVMBuildPhi(
 				builder, LLVMInt8Type(), "case_isNull");
+			result.isDone = LLVMBuildPhi(
+				builder, LLVMInt32Type(), "case_isDone");
 
 			LLVMPositionBuilderAtEnd(builder, this_bb);
 
@@ -1347,6 +1593,8 @@ GenerateExpr(LLVMBuilderRef builder,
 								&current_bb, 1);
 				LLVMAddIncoming(result.isNull, &clause_result.isNull,
 								&current_bb, 1);
+				LLVMAddIncoming(result.isDone, &clause_result.isDone,
+								&current_bb, 1);
 				LLVMBuildBr(builder, done);
 
 				/*
@@ -1364,6 +1612,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				LLVMAddIncoming(result.value, &defresult.value,
 								&current_bb, 1);
 				LLVMAddIncoming(result.isNull, &defresult.isNull,
+								&current_bb, 1);
+				LLVMAddIncoming(result.isDone, &defresult.isDone,
 								&current_bb, 1);
 				LLVMBuildBr(builder, done);
 			}
@@ -1585,22 +1835,24 @@ GenerateExpr(LLVMBuilderRef builder,
 						function, "ScalarArrayOpExpr_next");
 					LLVMValueRef true_llvm = LLVMConstAllOnes(LLVMInt1Type());
 					LLVMValueRef fcinfo_llvm, isNull, early_exit, phi;
+					LLVMValueRef hasSetArg = LLVMConstInt(LLVMInt1Type(), 0, 0);
 					LLVMTupleAttr thisresult;
 
 					LLVMMoveBasicBlockAfter(next_bb, this_bb);
 					LLVMMoveBasicBlockAfter(checkresult_bb, this_bb);
 
 					Assert(fcinfo->nargs == 2);
-
 					attr[1].value = LLVMConstInt(
 						LLVMInt64Type(), elt_datum, false);
 					attr[1].isNull = LLVMConstInt(
 						LLVMInt8Type(), elt_isNull, false);
+					attr[1].isDone = LLVMConstInt(
+						LLVMInt32Type(), ExprSingleResult, false);
 
 					fcinfo_llvm = GenerateInitFCInfo(
 						builder, fcinfo, rtcontext->fcinfo);
 					thisresult = GenerateFunctionCallNCollNull(
-						builder, fcinfo, fcinfo_llvm, attr, false, false);
+						builder, fcinfo, fcinfo_llvm, attr, false, hasSetArg);
 					isNull = LLVMBuildIsNotNull(
 						builder, thisresult.isNull, "thisresult.isNull");
 					LLVMBuildCondBr(builder, isNull, next_bb, checkresult_bb);

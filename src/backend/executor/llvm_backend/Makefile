@@ -63,7 +63,8 @@ ifeq ($(enable_jit_rebuild), yes)
         utils/adt/timestamp.bc \
         utils/adt/varchar.bc \
         utils/adt/varlena.bc \
-        utils/fmgr/fmgr.bc
+        utils/fmgr/fmgr.bc \
+        utils/sort/tuplestore.bc
 
   llvm_backend.cpp: $(LLVM_BACKEND_LIST) passes/prune_static_vars.so
 	$(LLVM_LINK) $(filter %.bc,$^) -o backend.bc
