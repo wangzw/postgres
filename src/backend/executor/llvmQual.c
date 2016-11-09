@@ -78,6 +78,23 @@ typedef struct LLVMTupleAttr {
 #define EXPRCONTEXT_SCANTUPLE_FIELDNO 1
 #define EXPRCONTEXT_INNERTUPLE_FIELDNO 2
 #define EXPRCONTEXT_OUTERTUPLE_FIELDNO 3
+#define FUNCTIONCALLINFODATA_FLINFO_FIELDNO 0
+#define FUNCTIONCALLINFODATA_CONTEXT_FIELDNO 1
+#define FUNCTIONCALLINFODATA_RESULTINFO_FIELDNO 2
+#define FUNCTIONCALLINFODATA_FNCOLLATION_FIELDNO 3
+#define FUNCTIONCALLINFODATA_ISNULL_FIELDNO 4
+#define FUNCTIONCALLINFODATA_NARGS_FIELDNO 5
+#define FUNCTIONCALLINFODATA_ARG_FIELDNO 6
+#define FUNCTIONCALLINFODATA_ARGNULL_FIELDNO 7
+#define HEAPTUPLEDATA_DATA_FIELDNO 3
+#define RETURNSETINFO_TYPE_FIELDNO 0
+#define RETURNSETINFO_ECONTEXT_FIELDNO 1
+#define RETURNSETINFO_EXPECTEDDESC_FIELDNO 2
+#define RETURNSETINFO_ALLOWEDMODES_FIELDNO 3
+#define RETURNSETINFO_RETURNMODE_FIELDNO 4
+#define RETURNSETINFO_ISDONE_FIELDNO 5
+#define RETURNSETINFO_SETRESULT_FIELDNO 6
+#define RETURNSETINFO_SETDESC_FIELDNO 7
 #define TUPLETABLESLOT_TUPLE_FIELDNO 5
 #define TUPLETABLESLOT_TUPLEDESCRIPTOR_FIELDNO 6
 #define TUPLETABLESLOT_VALUES_FIELDNO 10
@@ -273,13 +290,21 @@ GenerateInitFCInfo(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 		nargs_ptr, argnulls;
 
 	context_ptr =
-		LLVMBuildStructGEP(builder, fcinfo_llvm, 1, "context_ptr");
+		LLVMBuildStructGEP(builder, fcinfo_llvm,
+						   FUNCTIONCALLINFODATA_CONTEXT_FIELDNO,
+						   "context_ptr");
 	resultinfo_ptr =
-		LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
+		LLVMBuildStructGEP(builder, fcinfo_llvm,
+						   FUNCTIONCALLINFODATA_RESULTINFO_FIELDNO,
+						   "resultinfo_ptr");
 	fncollation_ptr =
-		LLVMBuildStructGEP(builder, fcinfo_llvm, 3, "fncollation_ptr");
+		LLVMBuildStructGEP(builder, fcinfo_llvm,
+						   FUNCTIONCALLINFODATA_FNCOLLATION_FIELDNO,
+						   "fncollation_ptr");
 	nargs_ptr =
-		LLVMBuildStructGEP(builder, fcinfo_llvm, 5, "nargs_ptr");
+		LLVMBuildStructGEP(builder, fcinfo_llvm,
+						   FUNCTIONCALLINFODATA_NARGS_FIELDNO,
+						   "nargs_ptr");
 
 	LLVMBuildStore(builder,
 				   ConstPointer(
@@ -300,7 +325,9 @@ GenerateInitFCInfo(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	 * Zero-initialize `argnull`.
 	 */
 	StaticAssertStmt(sizeof(bool) == sizeof(int8_t), "bool is 8-bit");
-	argnulls = LLVMBuildStructGEP(builder, fcinfo_llvm, 7, "argnull_ptr");
+	argnulls = LLVMBuildStructGEP(builder, fcinfo_llvm,
+								  FUNCTIONCALLINFODATA_ARG_FIELDNO,
+								  "argnull_ptr");
 	argnulls = LLVMBuildStructGEP(builder, argnulls, 0, "argnull_ptr");
 	GenerateMemSet(builder, 1, argnulls,
 				   LLVMConstNull(LLVMInt8Type()),
@@ -379,10 +406,13 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	LLVMValueRef functionRef = define_llvm_pg_function(
 		builder, fcinfo->flinfo);
 	LLVMValueRef flinfo_ptr = LLVMBuildStructGEP(
-			builder, fcinfo_llvm, 0, "flinfo_ptr");
-	LLVMValueRef args = LLVMBuildStructGEP(builder, fcinfo_llvm, 6, "args");
+		builder, fcinfo_llvm, FUNCTIONCALLINFODATA_FLINFO_FIELDNO,
+		"flinfo_ptr");
+	LLVMValueRef args = LLVMBuildStructGEP(
+		builder, fcinfo_llvm, FUNCTIONCALLINFODATA_ARG_FIELDNO, "args");
 	LLVMValueRef argnulls = LLVMBuildStructGEP(
-		builder, fcinfo_llvm, 7, "argnulls");
+		builder, fcinfo_llvm, FUNCTIONCALLINFODATA_ARGNULL_FIELDNO,
+		"argnulls");
 	LLVMTypeRef fcinfo_type;
 	LLVMValueRef resultinfo_ptr, rsinfo_isDone_ptr;
 	int arg_index;
@@ -398,7 +428,9 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 		LLVMBuildStore(builder, attr[arg_index].isNull, argnull_ptr);
 	}
 
-	isNull_ptr = LLVMBuildStructGEP(builder, fcinfo_llvm, 4, "isNull_ptr");
+	isNull_ptr = LLVMBuildStructGEP(
+		builder, fcinfo_llvm, FUNCTIONCALLINFODATA_ISNULL_FIELDNO,
+		"isNull_ptr");
 	LLVMBuildStore(builder, LLVMConstNull(LLVMInt8Type()), isNull_ptr);
 
 	LLVMBuildStore(builder,
@@ -416,13 +448,16 @@ GenerateFunctionCallNCollNull(LLVMBuilderRef builder, FunctionCallInfo fcinfo,
 	if (retSet)
 	{
 		resultinfo_ptr =
-			LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
+			LLVMBuildStructGEP(builder, fcinfo_llvm,
+							   FUNCTIONCALLINFODATA_RESULTINFO_FIELDNO,
+							   "resultinfo_ptr");
 		resultinfo_ptr = LLVMBuildBitCast(builder,
 			LLVMBuildLoad(builder, resultinfo_ptr, "resultinfo"),
 			LLVMPointerType(BackendStructType(ReturnSetInfo), 0),
 			"resultinfo");
 		rsinfo_isDone_ptr =
-			LLVMBuildStructGEP(builder, resultinfo_ptr, 5, "&isDone");
+			LLVMBuildStructGEP(builder, resultinfo_ptr,
+							   RETURNSETINFO_ISDONE_FIELDNO, "&isDone");
 	}
 
 	LLVMGetParamTypes(LLVMGetElementType(LLVMTypeOf(functionRef)),
@@ -451,26 +486,44 @@ FCInfoLLVMAddRetSet(LLVMBuilderRef builder, ExprContext* econtext,
 					TupleDesc expectedDesc, LLVMValueRef fcinfo_llvm)
 {
 	LLVMValueRef resultinfo_ptr =
-		LLVMBuildStructGEP(builder, fcinfo_llvm, 2, "resultinfo_ptr");
+		LLVMBuildStructGEP(builder, fcinfo_llvm,
+						   FUNCTIONCALLINFODATA_RESULTINFO_FIELDNO,
+						   "resultinfo_ptr");
 	LLVMTypeRef rsinfoType = BackendStructType(ReturnSetInfo);
 	LLVMValueRef rsinfo_ptr = LLVMBuildAlloca(builder, rsinfoType, "rsinfo");
 	LLVMValueRef ret = rsinfo_ptr;
 	LLVMValueRef rsinfo_type_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 0, "&rsinfo->type");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_TYPE_FIELDNO,
+						   "&rsinfo->type");
 	LLVMValueRef rsinfo_econtext_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 1, "&rsinfo->econtext");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_ECONTEXT_FIELDNO,
+						   "&rsinfo->econtext");
 	LLVMValueRef rsinfo_expectedDesc_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 2, "&rsinfo->expectedDesc");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_EXPECTEDDESC_FIELDNO,
+						   "&rsinfo->expectedDesc");
 	LLVMValueRef rsinfo_allowedModes_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 3, "&rsinfo->allowedModes");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_ALLOWEDMODES_FIELDNO,
+						   "&rsinfo->allowedModes");
 	LLVMValueRef rsinfo_returnMode_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 4, "&rsinfo->returnMode");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_RETURNMODE_FIELDNO,
+						   "&rsinfo->returnMode");
 	LLVMValueRef rsinfo_isDone_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 5, "&rsinfo->isDone");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_ISDONE_FIELDNO,
+						   "&rsinfo->isDone");
 	LLVMValueRef rsinfo_setResult_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 6, "&rsinfo->setResult");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_SETRESULT_FIELDNO,
+						   "&rsinfo->setResult");
 	LLVMValueRef rsinfo_setDesc_ptr =
-		LLVMBuildStructGEP(builder, rsinfo_ptr, 7, "&rsinfo->setDesc");
+		LLVMBuildStructGEP(builder, rsinfo_ptr,
+						   RETURNSETINFO_SETDESC_FIELDNO,
+						   "&rsinfo->setDesc");
 
 	LLVMBuildStore(builder, LLVMConstInt(
 		LLVMInt32Type(), T_ReturnSetInfo, false), rsinfo_type_ptr);
@@ -1047,7 +1100,8 @@ GenerateExpr(LLVMBuilderRef builder,
 				builder, define_heap_form_tuple, heap_form_tuple_args, 3);
 
 			/* HeapTupleGetDatum */
-			t_data = LLVMBuildStructGEP(builder, tuple, 3, "t_data_ptr");
+			t_data = LLVMBuildStructGEP(
+				builder, tuple, HEAPTUPLEDATA_DATA_FIELDNO, "t_data_ptr");
 			t_data = LLVMBuildLoad(builder, t_data, "t_data");
 			result.value = GenerateCallBackend(
 				builder, define_HeapTupleHeaderGetDatum, &t_data, 1);
@@ -1310,8 +1364,9 @@ GenerateExpr(LLVMBuilderRef builder,
 									BackendStructType(TupleTableSlot), 0), 0),
 							&fexprstate->funcResultSlot);
 				LLVMValueRef rsinfo_returnMode_ptr =
-					LLVMBuildStructGEP(builder, rsinfo_ptr, 4,
-							"&rsinfo->returnMode");
+					LLVMBuildStructGEP(builder, rsinfo_ptr,
+									   RETURNSETINFO_RETURNMODE_FIELDNO,
+									   "&rsinfo->returnMode");
 				LLVMValueRef returnMode = LLVMBuildLoad(
 						builder, rsinfo_returnMode_ptr, "rsinfo->returnMode");
 				LLVMValueRef cond = LLVMBuildICmp(builder, LLVMIntEQ, returnMode,
@@ -1341,8 +1396,9 @@ GenerateExpr(LLVMBuilderRef builder,
 				LLVMAddIncoming(result.isDone, &end_llvm,
 						&materialize_bb, 1);
 				rsinfo_setResult_ptr =
-					LLVMBuildStructGEP(builder, rsinfo_ptr, 6,
-							"&rsinfo->setResult");
+					LLVMBuildStructGEP(builder, rsinfo_ptr,
+									   RETURNSETINFO_SETRESULT_FIELDNO,
+									   "&rsinfo->setResult");
 				setResult = LLVMBuildLoad(
 						builder, rsinfo_setResult_ptr, "rsinfo->setResult");
 
@@ -1354,8 +1410,9 @@ GenerateExpr(LLVMBuilderRef builder,
 				LLVMPositionBuilderAtEnd(builder, restart_bb);
 				LLVMBuildStore(builder, setResult, funcResultStore_ptr);
 				rsinfo_setDesc_ptr =
-					LLVMBuildStructGEP(builder, rsinfo_ptr, 7,
-							"&rsinfo->setDesc");
+					LLVMBuildStructGEP(builder, rsinfo_ptr,
+									   RETURNSETINFO_SETDESC_FIELDNO,
+									   "&rsinfo->setDesc");
 				setDesc = LLVMBuildLoad(
 						builder, rsinfo_setDesc_ptr, "rsinfo->setDesc");
 				if (fexprstate->funcResultDesc)
