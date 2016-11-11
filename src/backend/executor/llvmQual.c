@@ -369,15 +369,12 @@ define_llvm_pg_function(LLVMBuilderRef builder, FmgrInfo *flinfo)
 	 */
 	if (functionRef == NULL)
 	{
-		char func_name[16];
 		LLVMTypeRef fcinfo_type, function_type_llvm;
 
-		fcinfo_type = BackendStructType(FunctionCallInfoData);
-		fcinfo_type = LLVMPointerType(fcinfo_type, 0);
+		fcinfo_type = LLVMPointerType(
+				BackendStructType(FunctionCallInfoData), 0);
 		function_type_llvm = LLVMFunctionType(
 				LLVMInt64Type(), &fcinfo_type, 1, false);
-
-		snprintf(func_name, sizeof(func_name), "%d", flinfo->fn_oid);
 
 		functionRef = ConstPointer(
 			LLVMPointerType(function_type_llvm, 0), flinfo->fn_addr);
