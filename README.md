@@ -60,6 +60,7 @@ LLVM dumps are stored in the `llvm_dump` subdirectory in the database directory.
 ## Resources
 
 - LLVM Cauldron 2016: Speeding up query execution in PostgreSQL using LLVM JIT ([slides](http://llvm.org/devmtg/2016-09/slides/Melnik-PostgreSQLLLVM.pdf))
+- PgCon 2016 Lighting Talks presentation ([slides](https://www.pgcon.org/2016/schedule/attachments/411_ISPRAS%20LLVM+Postgres%20Presentation.pdf))
 - [Dynamic compilation of expressions in SQL queries for PostgreSQL](http://www.ispras.ru/en/proceedings/isp_28_2016_4/isp_28_2016_4_217/) (paper in Russian, abstract in English)
 - PgConf.Russia 2016: Speeding up query execution in PostgreSQL using LLVM JIT compiler ([slides](https://pgconf.ru/en/2016/89652) in Russian)
 
