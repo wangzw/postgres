@@ -823,7 +823,6 @@ with_wal_segsize
 with_CC
 enable_llvm_jit
 with_llvm_config
-with_clang
 enable_jit_rebuild
 enable_depend
 enable_cassert
@@ -1520,7 +1519,6 @@ Optional Packages:
                           set WAL segment size in MB [16]
   --with-CC=CMD           set compiler (deprecated)
   --with-llvm-config=PATH how to run llvm-config
-  --with-clang=PATH       how to run clang
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
@@ -5265,27 +5263,6 @@ if test "${with_llvm_config+set}" = set; then :
       ;;
     no)
       as_fn_error $? "argument required for --with-llvm-config option" "$LINENO" 5
-      ;;
-    *)
-
-      ;;
-  esac
-
-fi
-
-
-
-
-
-# Check whether --with-clang was given.
-if test "${with_clang+set}" = set; then :
-  withval=$with_clang;
-  case $withval in
-    yes)
-      as_fn_error $? "argument required for --with-clang option" "$LINENO" 5
-      ;;
-    no)
-      as_fn_error $? "argument required for --with-clang option" "$LINENO" 5
       ;;
     *)
 
@@ -15347,16 +15324,13 @@ $as_echo "$LLVM_VERSION bad" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
 $as_echo "$LLVM_VERSION ok" >&6; }
 
-    clang="clang-3.7"
-    if test "x$with_clang" != "x"; then
-      clang=$with_clang
-    fi
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang 3.7" >&5
-$as_echo_n "checking for clang 3.7... " >&6; }
-    if $clang --version | grep "version 3.7" ; then :
+    clang=`$llvm_config --bindir`/clang;
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang version 3.7.1cppbe" >&5
+$as_echo_n "checking for clang version 3.7.1cppbe... " >&6; }
+    if $clang --version | grep "version 3.7.1cppbe" ; then :
 
 else
-  as_fn_error $? "clang 3.7 required, unable to run using \"$clang\"" "$LINENO" 5
+  as_fn_error $? "clang 3.7.1cppbe required, unable to run using \"$clang\", pls build it inside LLVM" "$LINENO" 5
 fi
 
   fi

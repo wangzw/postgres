@@ -12,7 +12,12 @@ subdir = src/backend/executor/llvm_backend
 top_builddir = ../../../..
 include $(top_builddir)/src/Makefile.global
 
+ifeq ($(enable_debug), yes)
+CXXFLAGS := $(shell $(llvm_config) --cxxflags)
+else
 CXXFLAGS := $(shell $(llvm_config) --cxxflags) -g0
+endif
+
 LLVM_BACKEND_FILE_LIMIT := 50
 OBJS := llvm_backend_wrapper.o llvm_backend.a
 
@@ -36,7 +41,7 @@ ifeq ($(enable_jit_rebuild), yes)
   LLC := $(BINDIR)/llc
 
   OPT_OPTIONS := -O3
-  CLANG_OPTS := $(CPPFLAGS) $(CFLAGS) -g0 \
+  CLANG_OPTS := $(CPPFLAGS) $(CFLAGS) -O2 -g0 \
 	-Wno-invalid-command-line-argument \
 	-Wno-unused-command-line-argument \
 	-Wno-ignored-attributes \

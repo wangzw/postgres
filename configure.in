@@ -557,7 +557,6 @@ PGAC_ARG_BOOL(enable, llvm-jit, yes, [turn off LLVM JIT],
 AC_SUBST(enable_llvm_jit)
 
 PGAC_ARG_REQ(with, llvm-config, [PATH], [how to run llvm-config])
-PGAC_ARG_REQ(with, clang, [PATH], [how to run clang])
 
 PGAC_ARG_BOOL(enable, jit-rebuild, no, [rebuild bitcode files and LLVM C++ API files])
 AC_SUBST(enable_jit_rebuild)
@@ -2057,7 +2056,7 @@ if test "$enable_llvm_jit" = yes ; then
   LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $1}'`
   LLVM_VERSION_MINOR=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $2}'`
   LLVM_VERSION_PATCH=`echo $LLVM_VERSION | grep -E '^[[0-9.]]+' | awk -F. '{print $3}'`
-  if (test "x$LLVM_VERSION_MAJOR" != "x3") || ((test "x$LLVM_VERSION_MINOR" != "x7")); then
+  if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7"); then
     AC_MSG_RESULT([$LLVM_VERSION bad])
     AC_MSG_ERROR([LLVM version 3.7(.1) required])
   fi
@@ -2071,13 +2070,10 @@ if test "$enable_llvm_jit" = yes ; then
     fi
     AC_MSG_RESULT([$LLVM_VERSION ok])
 
-    clang="clang-3.7"
-    if test "x$with_clang" != "x"; then
-      clang=$with_clang
-    fi
-    AC_MSG_CHECKING([for clang 3.7])
-    AS_IF([$clang --version | grep "version 3.7" ], [],
-          [AC_MSG_ERROR([clang 3.7 required, unable to run using "$clang"])])
+    clang=`$llvm_config --bindir`/clang;
+    AC_MSG_CHECKING([for clang version 3.7.1cppbe])
+    AS_IF([$clang --version | grep "version 3.7.1cppbe" ], [],
+          [AC_MSG_ERROR([clang 3.7.1cppbe required, unable to run using "$clang", pls build it inside LLVM])])
     AC_SUBST(clang)
   fi
 
