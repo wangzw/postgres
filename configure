@@ -638,6 +638,8 @@ DOCBOOKSTYLE
 have_docbook
 JADE
 NSGMLS
+llvm_config
+clang
 TCL_SHLIB_LD_LIBS
 TCL_SHARED_BUILD
 TCL_LIB_SPEC
@@ -719,6 +721,8 @@ with_tcl
 enable_thread_safety
 INCLUDES
 autodepend
+enable_jit_rebuild
+enable_llvm_jit
 TAS
 GCC
 CPP
@@ -817,6 +821,9 @@ with_segsize
 with_wal_blocksize
 with_wal_segsize
 with_CC
+enable_llvm_jit
+with_llvm_config
+enable_jit_rebuild
 enable_depend
 enable_cassert
 enable_thread_safety
@@ -1484,6 +1491,8 @@ Optional Features:
   --enable-coverage       build with coverage testing instrumentation
   --enable-dtrace         build with DTrace support
   --enable-tap-tests      enable TAP tests (requires Perl and IPC::Run)
+  --disable-llvm-jit      turn off LLVM JIT
+  --enable-jit-rebuild    rebuild bitcode files and LLVM C++ API files
   --enable-depend         turn on automatic dependency tracking
   --enable-cassert        enable assertion checks (for debugging)
   --disable-thread-safety disable thread-safety in client libraries
@@ -1509,6 +1518,7 @@ Optional Packages:
   --with-wal-segsize=SEGSIZE
                           set WAL segment size in MB [16]
   --with-CC=CMD           set compiler (deprecated)
+  --with-llvm-config=PATH how to run llvm-config
   --with-tcl              build Tcl modules (PL/Tcl)
   --with-tclconfig=DIR    tclConfig.sh is in DIR
   --with-perl             build Perl modules (PL/Perl)
@@ -5206,6 +5216,85 @@ if test "$need_tas" = yes ; then
 else
   TAS=""
 fi
+
+
+
+#
+# LLVM JIT
+#
+
+
+# Check whether --enable-llvm-jit was given.
+if test "${enable_llvm_jit+set}" = set; then :
+  enableval=$enable_llvm_jit;
+  case $enableval in
+    yes)
+
+$as_echo "#define LLVM_JIT 1" >>confdefs.h
+
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-llvm-jit option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_llvm_jit=yes
+
+$as_echo "#define LLVM_JIT 1" >>confdefs.h
+
+fi
+
+
+
+
+
+
+
+# Check whether --with-llvm-config was given.
+if test "${with_llvm_config+set}" = set; then :
+  withval=$with_llvm_config;
+  case $withval in
+    yes)
+      as_fn_error $? "argument required for --with-llvm-config option" "$LINENO" 5
+      ;;
+    no)
+      as_fn_error $? "argument required for --with-llvm-config option" "$LINENO" 5
+      ;;
+    *)
+
+      ;;
+  esac
+
+fi
+
+
+
+
+
+# Check whether --enable-jit-rebuild was given.
+if test "${enable_jit_rebuild+set}" = set; then :
+  enableval=$enable_jit_rebuild;
+  case $enableval in
+    yes)
+      :
+      ;;
+    no)
+      :
+      ;;
+    *)
+      as_fn_error $? "no argument expected for --enable-jit-rebuild option" "$LINENO" 5
+      ;;
+  esac
+
+else
+  enable_jit_rebuild=no
+
+fi
+
 
 
 
@@ -15193,6 +15282,61 @@ fi
 
 
     CPPFLAGS=$ac_save_CPPFLAGS
+fi
+
+# Add llvm-config cppflags
+if test "$enable_llvm_jit" = yes ; then
+  llvm_config="llvm-config"
+  if test "x$with_llvm_config" != "x"; then
+    llvm_config=$with_llvm_config
+  fi
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for llvm_config" >&5
+$as_echo_n "checking for llvm_config... " >&6; }
+  if $llvm_config --bindir; then :
+
+else
+  as_fn_error $? "unable to run llvm-config using \"$llvm_config\"" "$LINENO" 5
+fi
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for llvm version" >&5
+$as_echo_n "checking for llvm version... " >&6; }
+  LLVM_VERSION=`$llvm_config --version`
+  LLVM_VERSION_MAJOR=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $1}'`
+  LLVM_VERSION_MINOR=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $2}'`
+  LLVM_VERSION_PATCH=`echo $LLVM_VERSION | grep -E '^[0-9.]+' | awk -F. '{print $3}'`
+  if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7"); then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION bad" >&5
+$as_echo "$LLVM_VERSION bad" >&6; }
+    as_fn_error $? "LLVM version 3.7(.1) required" "$LINENO" 5
+  fi
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
+$as_echo "$LLVM_VERSION ok" >&6; }
+
+  if test "$enable_jit_rebuild" = yes; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for llvm version (for jit-rebuild)" >&5
+$as_echo_n "checking for llvm version (for jit-rebuild)... " >&6; }
+    if (test "x$LLVM_VERSION_MAJOR" != "x3") || (test "x$LLVM_VERSION_MINOR" != "x7") || (test "x$LLVM_VERSION_PATCH" != "x1cppbe"); then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION bad" >&5
+$as_echo "$LLVM_VERSION bad" >&6; }
+      as_fn_error $? "special exact PATCHED version of LLVM - LLVM 3.7.1cppbe required for jit-rebuild" "$LINENO" 5
+    fi
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LLVM_VERSION ok" >&5
+$as_echo "$LLVM_VERSION ok" >&6; }
+
+    clang=`$llvm_config --bindir`/clang;
+    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for clang version 3.7.1cppbe" >&5
+$as_echo_n "checking for clang version 3.7.1cppbe... " >&6; }
+    if $clang --version | grep "version 3.7.1cppbe" ; then :
+
+else
+  as_fn_error $? "clang 3.7.1cppbe required, unable to run using \"$clang\", pls build it inside LLVM" "$LINENO" 5
+fi
+
+  fi
+
+  CPPFLAGS+=\ $($llvm_config --cppflags | sed -e 's/-D\S*DEBUG\S*\>//g')
+
 fi
 
 # check for <perl.h>

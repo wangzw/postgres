@@ -49,6 +49,10 @@ ifeq ($(with_systemd),yes)
 LIBS += -lsystemd
 endif
 
+ifeq ($(enable_llvm_jit), yes)
+LIBS += $(shell $(llvm_config) --ldflags --libs --system-libs mcjit passes all-targets) -lstdc++
+endif
+
 ##########################################################################
 
 all: submake-libpgport submake-schemapg postgres $(POSTGRES_IMP)
@@ -164,9 +168,11 @@ submake-schemapg:
 # will be in the build tree, so a simple ../.. reference won't work.
 # For headers generated during regular builds, we prefer a relative symlink.
 
-.PHONY: generated-headers
+.PHONY: generated-headers generated-headers-helper
 
-generated-headers: $(top_builddir)/src/include/parser/gram.h $(top_builddir)/src/include/catalog/schemapg.h $(top_builddir)/src/include/storage/lwlocknames.h $(top_builddir)/src/include/utils/errcodes.h $(top_builddir)/src/include/utils/fmgroids.h $(top_builddir)/src/include/utils/probes.h
+generated-headers-helper: $(top_builddir)/src/include/parser/gram.h $(top_builddir)/src/include/catalog/schemapg.h $(top_builddir)/src/include/storage/lwlocknames.h $(top_builddir)/src/include/utils/errcodes.h $(top_builddir)/src/include/utils/fmgroids.h $(top_builddir)/src/include/utils/probes.h
+
+generated-headers: generated-headers-helper
 
 $(top_builddir)/src/include/parser/gram.h: parser/gram.h
 	prereqdir=`cd '$(dir $<)' >/dev/null && pwd` && \
@@ -196,6 +202,17 @@ $(top_builddir)/src/include/utils/fmgroids.h: utils/fmgroids.h
 $(top_builddir)/src/include/utils/probes.h: utils/probes.h
 	cd '$(dir $@)' && rm -f $(notdir $@) && \
 	    $(LN_S) "../../../$(subdir)/utils/probes.h" .
+
+ifeq ($(enable_llvm_jit), yes)
+executor/llvm_backend/llvm_backend_wrapper.h: generated-headers-helper
+	$(MAKE) -C executor/llvm_backend llvm_backend_wrapper.cpp
+
+generated-headers: $(top_builddir)/src/include/executor/llvm_backend_wrapper.h
+
+$(top_builddir)/src/include/executor/llvm_backend_wrapper.h: executor/llvm_backend/llvm_backend_wrapper.h
+	cd '$(dir $@)' && rm -f $(notdir $@) && \
+	    $(LN_S) "../../../$(subdir)/$<" .
+endif
 
 
 utils/probes.o: utils/probes.d $(SUBDIROBJS)
@@ -303,7 +320,8 @@ clean:
 		$(top_builddir)/src/include/catalog/schemapg.h \
 		$(top_builddir)/src/include/storage/lwlocknames.h \
 		$(top_builddir)/src/include/utils/fmgroids.h \
-		$(top_builddir)/src/include/utils/probes.h
+		$(top_builddir)/src/include/utils/probes.h \
+		$(top_builddir)/src/include/executor/llvm_backend_wrapper.h
 ifeq ($(PORTNAME), cygwin)
 	rm -f postgres.dll libpostgres.a
 endif

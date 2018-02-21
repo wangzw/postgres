@@ -261,6 +261,10 @@ ExecInitBitmapIndexScan(BitmapIndexScan *node, EState *estate, int eflags)
 	indexstate->biss_RuntimeKeys = NULL;
 	indexstate->biss_NumRuntimeKeys = 0;
 
+#ifdef LLVM_JIT
+	ExecAssignExprContext(estate, &indexstate->ss.ps);
+#endif
+
 	/*
 	 * build the index scan keys from the index qualification
 	 */
@@ -286,12 +290,18 @@ ExecInitBitmapIndexScan(BitmapIndexScan *node, EState *estate, int eflags)
 	{
 		ExprContext *stdecontext = indexstate->ss.ps.ps_ExprContext;
 
+#ifndef LLVM_JIT
 		ExecAssignExprContext(estate, &indexstate->ss.ps);
+#endif
 		indexstate->biss_RuntimeContext = indexstate->ss.ps.ps_ExprContext;
 		indexstate->ss.ps.ps_ExprContext = stdecontext;
 	}
 	else
 	{
+#ifdef LLVM_JIT
+		FreeExprContext(indexstate->ss.ps.ps_ExprContext, false);
+		indexstate->ss.ps.ps_ExprContext = NULL;
+#endif
 		indexstate->biss_RuntimeContext = NULL;
 	}
 

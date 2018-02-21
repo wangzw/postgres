@@ -42,10 +42,14 @@
 #include "access/transam.h"
 #include "executor/executor.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/planmain.h"
 #include "parser/parsetree.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
+#ifdef LLVM_JIT
+# include <llvm-c/ExecutionEngine.h>
+#endif
 
 static bool get_last_attnums(Node *node, ProjectionInfo *projInfo);
 static void ShutdownExprContext(ExprContext *econtext, bool isCommit);
@@ -148,6 +152,35 @@ CreateExecutorState(void)
 	return estate;
 }
 
+#ifdef LLVM_JIT
+/*
+ * Create and initialize LLVM Execution Engine
+ */
+void
+CreateLLVMExecutionEngine(EState *estate)
+{
+	if (enable_llvm_jit)
+	{
+		struct LLVMMCJITCompilerOptions options;
+		char *error_msg = NULL;
+		LLVMModuleRef init_module = LLVMModuleCreateWithName("INIT");
+
+		LLVMInitializeMCJITCompilerOptions(&options, sizeof(options));
+		options.OptLevel = 3;
+		if (LLVMCreateMCJITCompilerForModule(&estate->es_engine,
+					init_module, &options,
+					sizeof(options), &error_msg) != 0)
+		{
+			elog(ERROR, "LLVM: %s", error_msg);
+			LLVMDisposeMessage(error_msg);
+		}
+
+		LLVMRemoveModule(estate->es_engine, init_module, &init_module, NULL);
+		LLVMDisposeModule(init_module);
+	}
+}
+#endif
+
 /* ----------------
  *		FreeExecutorState
  *
@@ -182,6 +215,14 @@ FreeExecutorState(EState *estate)
 						true);
 		/* FreeExprContext removed the list link for us */
 	}
+
+#ifdef LLVM_JIT
+	/*
+	 * Delete LLVM Executor Engine.
+	 */
+	if (enable_llvm_jit)
+		LLVMDisposeExecutionEngine(estate->es_engine);
+#endif
 
 	/*
 	 * Free the per-query memory context, thereby releasing all working

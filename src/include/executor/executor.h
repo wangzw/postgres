@@ -62,6 +62,9 @@
 #define EXEC_FLAG_WITH_OIDS		0x0020	/* force OIDs in returned tuples */
 #define EXEC_FLAG_WITHOUT_OIDS	0x0040	/* force no OIDs in returned tuples */
 #define EXEC_FLAG_WITH_NO_DATA	0x0080	/* rel scannability doesn't matter */
+#ifdef LLVM_JIT
+#define EXEC_FLAG_NO_JIT		0x0100	/* do not create LLVM ExecutionEngine */
+#endif
 
 
 /*
@@ -230,6 +233,8 @@ extern bool ExecShutdownNode(PlanState *node);
 /*
  * prototypes from functions in execQual.c
  */
+extern void init_fcache(Oid foid, Oid input_collation, FuncExprState *fcache,
+			MemoryContext fcacheCxt, bool needDescForSets);
 extern Datum GetAttributeByNum(HeapTupleHeader tuple, AttrNumber attrno,
 				  bool *isNull);
 extern Datum GetAttributeByName(HeapTupleHeader tuple, const char *attname,
@@ -242,12 +247,20 @@ extern Tuplestorestate *ExecMakeTableFunctionResult(ExprState *funcexpr,
 extern Datum ExecEvalExprSwitchContext(ExprState *expression, ExprContext *econtext,
 						  bool *isNull, ExprDoneCond *isDone);
 extern ExprState *ExecInitExpr(Expr *node, PlanState *parent);
+extern ExprState *ExecInitExprNoJIT(Expr *node, PlanState *parent);
 extern ExprState *ExecPrepareExpr(Expr *node, EState *estate);
 extern bool ExecQual(List *qual, ExprContext *econtext, bool resultForNull);
 extern int	ExecTargetListLength(List *targetlist);
 extern int	ExecCleanTargetListLength(List *targetlist);
 extern TupleTableSlot *ExecProject(ProjectionInfo *projInfo,
 			ExprDoneCond *isDone);
+
+#ifdef LLVM_JIT
+extern bool ExecCompileExprLLVM(ExprState *node, ExprContext *econtext);
+extern bool IsExprSupportedLLVM(Expr *node);
+#endif
+
+bool ExecInitAggref(Expr *node, PlanState *parent);
 
 /*
  * prototypes from functions in execScan.c
@@ -307,6 +320,9 @@ extern void end_tup_output(TupOutputState *tstate);
  * prototypes from functions in execUtils.c
  */
 extern EState *CreateExecutorState(void);
+#ifdef LLVM_JIT
+extern void CreateLLVMExecutionEngine(EState *estate);
+#endif
 extern void FreeExecutorState(EState *estate);
 extern ExprContext *CreateExprContext(EState *estate);
 extern ExprContext *CreateStandaloneExprContext(void);
